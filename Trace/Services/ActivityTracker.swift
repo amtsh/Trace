@@ -15,6 +15,7 @@ final class ActivityTracker {
     private(set) var isRunning = false
 
     private static let activationDwellSeconds: Double = 10
+    private static let idleThresholdSeconds: Double = 60
 
     init(database: SnapshotDatabase) {
         self.database = database
@@ -29,7 +30,7 @@ final class ActivityTracker {
             forName: NSWorkspace.didActivateApplicationNotification,
             object: nil, queue: .main
         ) { [weak self] _ in
-            self?.scheduleActivationCapture()
+            self?.handleAppSwitch()
         }
 
         startPeriodicTimer()
@@ -75,6 +76,38 @@ final class ActivityTracker {
 
     // MARK: - Private
 
+    /// On every app switch: immediately record a lightweight snapshot (no AX),
+    /// then schedule the full-context dwell capture after activationDwellSeconds.
+    private func handleAppSwitch() {
+        Task { @MainActor in await captureAppSwitchSnapshot() }
+        scheduleActivationCapture()
+    }
+
+    /// Lightweight snapshot: captures app identity only, no AX calls.
+    /// Ensures every app switch is logged even if the user switches away quickly.
+    private func captureAppSwitchSnapshot() async {
+        guard let frontApp = NSWorkspace.shared.frontmostApplication,
+              let bundleId = frontApp.bundleIdentifier,
+              bundleId != ownBundleId,
+              !Self.ignoredBundles.contains(bundleId)
+        else { return }
+
+        let appName = frontApp.localizedName ?? bundleId
+        let ctx = CapturedContext(
+            appName: appName,
+            appBundle: bundleId,
+            windowTitle: nil,
+            documentURL: nil,
+            isIdle: false
+        )
+
+        if let last = lastContext, last.appBundle == ctx.appBundle { return }
+
+        lastContext = ctx
+        try? await database.append(ctx)
+        onSnapshotCaptured?()
+    }
+
     private func scheduleActivationCapture() {
         pendingActivationCapture?.cancel()
         pendingActivationCapture = Task { @MainActor [weak self] in
@@ -109,7 +142,7 @@ final class ActivityTracker {
             CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: .leftMouseDown),
             CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: .scrollWheel)
         )
-        if idleSeconds > 120 { return }
+        if idleSeconds > Self.idleThresholdSeconds { return }
 
         var windowTitle: String?
         var documentURL: String?
@@ -270,7 +303,7 @@ final class ActivityTracker {
         return nil
     }
 
-    // MARK: - Browser URL via AppleScript
+    // MARK: - Bundle lists
 
     static let ignoredBundles: Set<String> = [
         "com.apple.UserNotificationCenter",
@@ -286,7 +319,7 @@ final class ActivityTracker {
         "app.glaze.macos.main",
     ]
 
-    private static let browserBundles: Set<String> = [
+    static let browserBundles: Set<String> = [
         "com.apple.Safari",
         "com.google.Chrome",
         "company.thebrowser.Browser",
@@ -296,7 +329,7 @@ final class ActivityTracker {
         "com.microsoft.edgemac",
     ]
 
-    private static let chatBundles: Set<String> = [
+    static let chatBundles: Set<String> = [
         "com.anthropic.claude",
         "com.anthropic.claudefordesktop",
         "com.openai.chat",
