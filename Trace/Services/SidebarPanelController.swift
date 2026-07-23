@@ -8,6 +8,7 @@ final class SidebarPanelController {
 
     private var appState: AppState?
     private var panel: NSPanel?
+    private var hostingView: NSHostingView<SidebarRootView>?
     private var clickMonitor: Any?
     private var keyMonitor: Any?
     private var activeScreen: NSScreen?
@@ -46,29 +47,32 @@ final class SidebarPanelController {
         )
 
         if panel == nil {
-            let panel = NSPanel(
+            let newPanel = NSPanel(
                 contentRect: startFrame,
                 styleMask: [.borderless, .fullSizeContentView, .nonactivatingPanel],
                 backing: .buffered,
                 defer: false
             )
-            panel.isFloatingPanel = true
-            panel.level = .popUpMenu
-            panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
-            panel.backgroundColor = .clear
-            panel.isOpaque = false
-            panel.hasShadow = false
-            panel.hidesOnDeactivate = false
-            panel.isReleasedWhenClosed = false
+            newPanel.isFloatingPanel = true
+            newPanel.level = .popUpMenu
+            newPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
+            newPanel.backgroundColor = .clear
+            newPanel.isOpaque = false
+            newPanel.hasShadow = false
+            newPanel.hidesOnDeactivate = false
+            newPanel.isReleasedWhenClosed = false
 
-            let hostingView = NSHostingView(rootView: SidebarRootView(appState: appState))
-            hostingView.frame = NSRect(origin: .zero, size: endFrame.size)
-            hostingView.autoresizingMask = [.width, .height]
-            panel.contentView = hostingView
-            self.panel = panel
-        } else {
-            (panel!.contentView as? NSHostingView<SidebarRootView>)?.rootView =
-                SidebarRootView(appState: appState)
+            // Create the hosting view once. Pass appState via .environment() so
+            // @Observable propagates all updates automatically — we never replace
+            // the root view, preserving SwiftUI state (scroll position, expanded cards).
+            let root = SidebarRootView(appState: appState)
+            let hv = NSHostingView(rootView: root)
+            hv.frame = NSRect(origin: .zero, size: endFrame.size)
+            hv.autoresizingMask = [.width, .height]
+            newPanel.contentView = hv
+
+            self.panel = newPanel
+            self.hostingView = hv
         }
 
         guard let panel else {
@@ -79,7 +83,8 @@ final class SidebarPanelController {
         removeEventMonitors()
         panel.setFrame(startFrame, display: false)
         panel.orderFrontRegardless()
-        NSApp.activate(ignoringOtherApps: true)
+        // Do NOT call NSApp.activate — the panel uses .nonactivatingPanel intentionally
+        // to avoid stealing keyboard focus from the user's active app.
 
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = 0.25

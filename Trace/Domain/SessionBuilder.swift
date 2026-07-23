@@ -181,7 +181,7 @@ enum SessionBuilder {
         return 1
     }
 
-    private static func normalizeProjectName(_ name: String) -> String {
+    static func normalizeProjectName(_ name: String) -> String {
         if name.hasSuffix(".xcodeproj") { return String(name.dropLast(".xcodeproj".count)) }
         if name.hasSuffix(".xcworkspace") { return String(name.dropLast(".xcworkspace".count)) }
         return name
@@ -193,13 +193,6 @@ enum SessionBuilder {
     }
 
     // MARK: - Project extraction
-    //
-    // Strategy (in priority order):
-    //   1. file:// URL → path-based project name (most reliable)
-    //   2. https://github.com/ URL → repo name
-    //   3. Xcode window title (structured, reliable)
-    //   4. Terminal window title / path
-    //   5. dominantApp fallback (no fragile string splitting for other apps)
 
     private static let terminalBundles: Set<String> = BundleRegistry.shared.terminals
 
@@ -212,35 +205,23 @@ enum SessionBuilder {
     ]
 
     static func extractProject(from snapshot: Snapshot) -> String? {
-        // 1. file:// URL — highest signal
         if let url = snapshot.documentURL, url.hasPrefix("file://") {
             if let project = projectFromFileURL(url) { return project }
         }
-
-        // 2. GitHub URL
         if let url = snapshot.documentURL {
             if let project = projectFromGitHubURL(url) { return project }
         }
-
-        // 3. Xcode window title
         if snapshot.appBundle == xcodeBundle, let title = snapshot.windowTitle, !title.isEmpty {
-            if let project = projectFromXcodeTitle(title, documentURL: snapshot.documentURL) {
-                return project
-            }
+            if let project = projectFromXcodeTitle(title, documentURL: snapshot.documentURL) { return project }
         }
-
-        // 4. Terminal title/path
         if terminalBundles.contains(snapshot.appBundle), let title = snapshot.windowTitle, !title.isEmpty {
             if let project = projectFromTerminalTitle(title) { return project }
         }
-
-        // 5. No guess for other apps — dominantApp handles fallback at session level
         return nil
     }
 
-    // MARK: - URL-based extraction (reliable)
+    // MARK: - URL-based extraction
 
-    /// Single entry point for both file:// and https://github.com/ URLs.
     static func projectFromURL(_ urlString: String) -> String? {
         if urlString.hasPrefix("file://") { return projectFromFileURL(urlString) }
         if urlString.contains("github.com/") { return projectFromGitHubURL(urlString) }
@@ -256,13 +237,13 @@ enum SessionBuilder {
         return segments[1].components(separatedBy: "?").first
     }
 
-    private static func projectFromFileURL(_ urlString: String) -> String? {
+    static func projectFromFileURL(_ urlString: String) -> String? {
         var path = String(urlString.dropFirst("file://".count))
         if let decoded = path.removingPercentEncoding { path = decoded }
         return projectFromPath(path)
     }
 
-    private static func projectFromPath(_ path: String) -> String? {
+    static func projectFromPath(_ path: String) -> String? {
         let components = path.components(separatedBy: "/")
             .filter { !$0.isEmpty && $0 != "~" }
         guard components.count >= 2 else { return nil }
@@ -280,10 +261,8 @@ enum SessionBuilder {
         return nil
     }
 
-    // MARK: - Xcode title (structured — reliable)
-
     private static func projectFromXcodeTitle(_ title: String, documentURL: String?) -> String? {
-        let parts = title.components(separatedBy: " — ")
+        let parts = title.components(separatedBy: " \u2014 ")
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
 
@@ -305,10 +284,8 @@ enum SessionBuilder {
         return documentURL.flatMap { projectFromURL($0) }
     }
 
-    // MARK: - Terminal title (path-based — reliable)
-
     private static func projectFromTerminalTitle(_ title: String) -> String? {
-        for part in title.components(separatedBy: " — ") {
+        for part in title.components(separatedBy: " \u2014 ") {
             if let p = projectFromPath(part.trimmingCharacters(in: .whitespaces)) { return p }
         }
         if let colonIdx = title.firstIndex(of: ":") {
@@ -323,14 +300,14 @@ enum SessionBuilder {
     private static func makeSession(from snapshots: [Snapshot], project: String?) -> Session {
         let start = snapshots.first!.timestamp
         let end = snapshots.last!.timestamp
-        let minutes = max(Int(end.timeIntervalSince(start) / 60), 1)
+        let seconds = max(Int(end.timeIntervalSince(start)), 1)
         let activity = resolveActivity(from: snapshots, project: project)
 
         return Session(
             id: "session-\(Int(start.timeIntervalSince1970))",
             startTime: start,
             endTime: end,
-            durationMinutes: minutes,
+            durationSeconds: seconds,
             apps: buildApps(from: snapshots),
             activity: activity
         )

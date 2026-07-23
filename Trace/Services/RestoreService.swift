@@ -35,12 +35,19 @@ final class RestoreService {
 
         try? await Task.sleep(for: .milliseconds(300))
 
-        if Self.browserBundles.contains(app.bundleId) {
-            for url in app.urls {
-                if openBrowserTab(bundleId: app.bundleId, url: url) {
-                    restored.append(DisplayURL.format(url))
-                } else {
-                    failed.append((DisplayURL.format(url), "Couldn't open tab"))
+        if BundleRegistry.shared.browsers.contains(app.bundleId) {
+            for urlString in app.urls {
+                guard let url = URL(string: urlString), url.scheme?.hasPrefix("http") == true else { continue }
+                // Open URL directly via NSWorkspace into the specific app — no AppleScript, no injection risk.
+                let config = NSWorkspace.OpenConfiguration()
+                config.activates = true
+                do {
+                    try await NSWorkspace.shared.open(
+                        [url], withApplicationAt: appURL, configuration: config
+                    )
+                    restored.append(DisplayURL.format(urlString))
+                } catch {
+                    failed.append((DisplayURL.format(urlString), error.localizedDescription))
                 }
                 try? await Task.sleep(for: .milliseconds(200))
             }
@@ -77,61 +84,5 @@ final class RestoreService {
         }
 
         return RestoreResult(restored: restored, failed: failed)
-    }
-
-    // MARK: - Private
-
-    private static let browserBundles: Set<String> = [
-        "com.apple.Safari",
-        "com.google.Chrome",
-        "company.thebrowser.Browser",
-        "company.thebrowser.dia",
-        "com.brave.Browser",
-        "com.microsoft.edgemac",
-    ]
-
-    private func openBrowserTab(bundleId: String, url: String) -> Bool {
-        let escaped = url
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-
-        let script: String
-        switch bundleId {
-        case "com.apple.Safari":
-            script = """
-                tell application "Safari"
-                    activate
-                    if (count of windows) is 0 then
-                        make new document with properties {URL:"\(escaped)"}
-                    else
-                        tell front window to set current tab to (make new tab with properties {URL:"\(escaped)"})
-                    end if
-                end tell
-            """
-        case "com.google.Chrome", "com.brave.Browser", "com.microsoft.edgemac", "company.thebrowser.dia":
-            let name = switch bundleId {
-                case "com.google.Chrome": "Google Chrome"
-                case "com.brave.Browser": "Brave Browser"
-                case "company.thebrowser.dia": "Dia"
-                default: "Microsoft Edge"
-            }
-            script = """
-                tell application "\(name)"
-                    activate
-                    if (count of windows) is 0 then
-                        make new window
-                        set URL of active tab of front window to "\(escaped)"
-                    else
-                        tell front window to make new tab with properties {URL:"\(escaped)"}
-                    end if
-                end tell
-            """
-        default:
-            return false
-        }
-
-        var error: NSDictionary?
-        NSAppleScript(source: script)?.executeAndReturnError(&error)
-        return error == nil
     }
 }

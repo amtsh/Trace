@@ -51,7 +51,8 @@ actor SnapshotDatabase: SnapshotStore {
         let stmt = try prepare(sql)
         defer { sqlite3_finalize(stmt) }
 
-        sqlite3_bind_double(stmt, 1, Date().timeIntervalSince1970)
+        // Use ctx.timestamp — captured at event time, not actor-processing time.
+        sqlite3_bind_double(stmt, 1, ctx.timestamp.timeIntervalSince1970)
         bindText(stmt, 2, ctx.appBundle)
         bindText(stmt, 3, ctx.appName)
         bindText(stmt, 4, ctx.windowTitle)
