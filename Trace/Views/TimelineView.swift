@@ -60,9 +60,11 @@ struct TimelineView: View {
             } label: {
                 Text("Menu")
                     .font(.caption.weight(.medium))
+                    .foregroundStyle(.white.opacity(0.75))
                     .padding(.horizontal, 14)
                     .padding(.vertical, 7)
-                    .glassEffect(in: Capsule())
+                    .background(Color.black.opacity(0.55))
+                    .clipShape(Capsule())
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
