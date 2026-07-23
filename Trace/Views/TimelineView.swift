@@ -5,10 +5,10 @@ struct TimelineView: View {
     @State private var showClearConfirmation = false
     @State private var showStats = false
     @State private var showMenu = false
-    @State private var visibleCount = 10
+    @State private var visibleCount = 5
     @State private var cachedDayGroups: [DayGroup] = []
 
-    private static let pageSize = 10
+    private static let pageSize = 5
 
     var body: some View {
         Group {
