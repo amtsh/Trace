@@ -21,6 +21,10 @@ struct SessionCardView: View {
         collapsedApps.first ?? session.apps.first
     }
 
+    private var secondaryApps: [SessionApp] {
+        collapsedApps.count > 1 ? Array(collapsedApps.dropFirst()) : []
+    }
+
     private var displaySummary: String? {
         SessionDisplay.contextSubtitle(for: session)
     }
@@ -54,50 +58,59 @@ struct SessionCardView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack {
-                    Text(sessionTitle)
-                        .font(.callout.weight(.semibold))
-                    Spacer()
-                    Text(SessionDisplay.relativeTimeLabel(for: session))
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 0) {
+            // NC-style collapsed header: large icon left, content right
+            HStack(alignment: .top, spacing: 12) {
+                if let app = primaryApp {
+                    AppIconBadge(app: app, size: 40)
+                        .padding(.top, 1)
                 }
 
-                if let timeRange = SessionDisplay.timeRangeWithDurationLabel(for: session) {
-                    Text(timeRange)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                if let summary = displaySummary {
-                    Text(summary)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                }
-
-                if !collapsedApps.isEmpty {
-                    HStack(spacing: 6) {
-                        ForEach(collapsedApps.prefix(5)) { app in
-                            AppIconBadge(app: app)
-                        }
-                        if collapsedApps.count > 5 {
-                            Text("+\(collapsedApps.count - 5)")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                        }
-
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(alignment: .center, spacing: 6) {
+                        Text(sessionTitle)
+                            .font(.body.weight(.bold))
+                            .lineLimit(1)
                         Spacer()
-
+                        Text(SessionDisplay.relativeTimeLabel(for: session))
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
                         Image(systemName: "chevron.right")
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(.tertiary)
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(.quaternary)
                             .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                    }
+
+                    if let summary = displaySummary {
+                        Text(summary)
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+
+                    if !secondaryApps.isEmpty {
+                        HStack(spacing: 5) {
+                            ForEach(secondaryApps.prefix(5)) { app in
+                                AppIconBadge(app: app, size: 18)
+                            }
+                            if secondaryApps.count > 5 {
+                                Text("+\(secondaryApps.count - 5)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .padding(.top, 3)
+                    }
+
+                    if let timeRange = SessionDisplay.timeRangeWithDurationLabel(for: session) {
+                        Text(timeRange)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .padding(.top, 2)
                     }
                 }
             }
+            .padding(14)
             .contentShape(Rectangle())
             .onTapGesture {
                 guard !session.apps.isEmpty else { return }
@@ -108,6 +121,9 @@ struct SessionCardView: View {
             }
 
             if isExpanded {
+                Divider()
+                    .padding(.horizontal, 14)
+
                 VStack(alignment: .leading, spacing: 10) {
                     Button {
                         Task { await restoreSession() }
@@ -135,7 +151,7 @@ struct SessionCardView: View {
                     if showAppList {
                         Text("Apps in this session")
                             .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Color.white.opacity(0.55))
 
                         VStack(spacing: 0) {
                             ForEach(listApps) { app in
@@ -161,8 +177,7 @@ struct SessionCardView: View {
                         .controlSize(.small)
                     }
                 }
-                .padding(10)
-                .background(.quinary, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .padding(14)
                 .transition(.blurReplace)
             }
 
@@ -170,13 +185,31 @@ struct SessionCardView: View {
                 Label("Grant Accessibility for window details", systemImage: "exclamationmark.triangle")
                     .font(.caption2)
                     .foregroundStyle(.orange)
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 10)
             }
         }
-        .padding(14)
-        .background(
-            .quaternary.opacity(isHovering && !isExpanded ? 0.65 : 0.45),
-            in: RoundedRectangle(cornerRadius: 16, style: .continuous)
-        )
+        .background {
+            ZStack {
+                VisualEffectBackground()
+                Color.black.opacity(0.42)
+                if isHovering {
+                    Color.white.opacity(0.05)
+                }
+            }
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(
+                    LinearGradient(
+                        colors: [Color.white.opacity(0.22), Color.white.opacity(0.04)],
+                        startPoint: .top, endPoint: .bottom
+                    ),
+                    lineWidth: 0.5
+                )
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .shadow(color: .black.opacity(0.35), radius: 8, x: 0, y: 4)
         .onHover { hovering in
             withAnimation(.smooth(duration: 0.15)) { isHovering = hovering }
         }
@@ -234,7 +267,7 @@ struct AppDetailRow: View {
                     if let timeShare {
                         Text(timeShare)
                             .font(.caption2)
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(.secondary)
                     }
                 }
 
@@ -242,13 +275,13 @@ struct AppDetailRow: View {
                     ForEach(displayLines.prefix(3)) { line in
                         Text(line.text)
                             .font(.caption)
-                            .foregroundStyle(line.isPath ? .blue : .secondary)
+                            .foregroundStyle(line.isPath ? Color.blue.opacity(0.9) : Color.white.opacity(0.6))
                             .lineLimit(1)
                     }
                     if displayLines.count > 3 {
                         Text("+\(displayLines.count - 3) more")
                             .font(.caption2)
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(.secondary)
                     }
                 }
             }
@@ -325,7 +358,7 @@ struct AppIconBadge: View {
                 Image(nsImage: icon)
                     .resizable()
                     .frame(width: size, height: size)
-                    .clipShape(RoundedRectangle(cornerRadius: size * 0.2))
+                    .clipShape(RoundedRectangle(cornerRadius: size * 0.22, style: .continuous))
             } else {
                 Image(systemName: "app.fill")
                     .font(.system(size: size * 0.7))

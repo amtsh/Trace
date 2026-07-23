@@ -57,7 +57,7 @@ final class SidebarPanelController {
             panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
             panel.backgroundColor = .clear
             panel.isOpaque = false
-            panel.hasShadow = true
+            panel.hasShadow = false
             panel.hidesOnDeactivate = false
             panel.isReleasedWhenClosed = false
 
@@ -161,31 +161,28 @@ final class SidebarPanelController {
 private struct SidebarRootView: View {
     let appState: AppState
 
-    private static let cornerRadius: CGFloat = 22
-
     var body: some View {
         Group {
             if appState.hasCompletedOnboarding {
                 TimelineView()
             } else {
                 OnboardingView()
+                    .background(VisualEffectBackground())
+                    .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                    .padding(12)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(VisualEffectBackground())
-        .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
-                .strokeBorder(.separator.opacity(0.5), lineWidth: 1)
-        )
         .environment(appState)
     }
 }
 
-private struct VisualEffectBackground: NSViewRepresentable {
+struct VisualEffectBackground: NSViewRepresentable {
+    var material: NSVisualEffectView.Material = .hudWindow
+
     func makeNSView(context: Context) -> NSVisualEffectView {
         let view = NSVisualEffectView()
-        view.material = .popover
+        view.material = material
         view.blendingMode = .behindWindow
         view.state = .active
         return view

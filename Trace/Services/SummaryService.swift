@@ -5,7 +5,7 @@ import FoundationModels
 @available(macOS 26, *)
 @Generable(description: "A short phrase summarizing a work session")
 struct GeneratedSummary {
-    @Guide(description: "A short phrase of 5–10 words with no period. Name specific files or pages only.")
+    @Guide(description: "A natural phrase of 5–10 words, no period. Describe the activity or task — e.g. 'Debugging auth flow in SessionDisplay.swift' or 'Researching electromagnetic fields'. Avoid listing app names.")
     var text: String
 }
 #endif
@@ -25,8 +25,9 @@ enum SummaryPrompt {
 
     static let instructions = """
         You summarize what someone did in a work session. \
-        Reply with a short phrase of 5–10 words. Do not use a period. \
-        Name specific files, pages, or tasks — not app or project names.
+        Reply with a short natural phrase of 5–10 words. No period. \
+        Focus on what they were doing or working on — name specific files, topics, or tasks. \
+        Do not just list app names.
         """
 
     static func cacheKey(for apps: [SessionApp], durationMinutes: Int) -> String {
@@ -42,7 +43,7 @@ enum SummaryPrompt {
         let ranked = SessionAppDisplay.rankedApps(apps)
         var prompt = """
             Summarize this \(durationMinutes)-minute work session in one short phrase \
-            (max 10 words, no period). Use file or page names only.
+            (5–10 words, no period).
 
             """
 
@@ -72,7 +73,12 @@ enum SummaryPrompt {
 }
 
 actor SummaryService: Summarizer {
-    private var cache: [String: String] = [:]
+    private var cache: [String: String]
+    private static let userDefaultsKey = "summaryCache"
+
+    init() {
+        self.cache = UserDefaults.standard.dictionary(forKey: Self.userDefaultsKey) as? [String: String] ?? [:]
+    }
 
     func summarize(apps: [SessionApp], durationMinutes: Int) async -> String {
         let ranked = SessionAppDisplay.rankedApps(apps)
@@ -84,55 +90,13 @@ actor SummaryService: Summarizer {
         if #available(macOS 26, *),
            let llm = await llmSummarize(apps: ranked, durationMinutes: durationMinutes) {
             cache[key] = llm
+            UserDefaults.standard.set(cache, forKey: Self.userDefaultsKey)
             return llm
         }
         #endif
 
-        return templateSummarize(apps: ranked, durationMinutes: durationMinutes)
-    }
-
-    // MARK: - Template fallback
-
-    private func templateSummarize(apps: [SessionApp], durationMinutes: Int) -> String {
-        guard !apps.isEmpty else { return "" }
-
-        var parts: [String] = []
-
-        if let primary = apps.first {
-            if let summary = primarySummary(for: primary)?.trimmingCharacters(in: .whitespaces),
-               !summary.isEmpty {
-                parts.append(summary)
-            }
-            let extraLines = SessionAppDisplay.contextLines(for: primary).dropFirst().prefix(2)
-                .map { $0.text.trimmingCharacters(in: .whitespaces) }
-                .filter { !$0.isEmpty }
-            parts.append(contentsOf: extraLines)
-        }
-
-        for app in apps.dropFirst().prefix(2) {
-            let lineText = SessionAppDisplay.bestDisplayLine(for: app)?
-                .text.trimmingCharacters(in: .whitespaces) ?? ""
-            if !lineText.isEmpty {
-                parts.append("\(app.appName): \(lineText)")
-            } else {
-                parts.append(app.appName)
-            }
-        }
-
-        return parts.filter { !$0.isEmpty }.joined(separator: " · ")
-    }
-
-    private func primarySummary(for app: SessionApp) -> String? {
-        if let line = SessionAppDisplay.bestDisplayLine(for: app) {
-            if SessionAppDisplay.isEditor(app.bundleId) {
-                return (line.text as NSString).lastPathComponent
-            }
-            if line.text.caseInsensitiveCompare(app.appName) != .orderedSame {
-                return line.text
-            }
-            return nil
-        }
-        return nil
+        // No template fallback — builtInContext handles display when no summary
+        return ""
     }
 
     // MARK: - Apple Foundation Models

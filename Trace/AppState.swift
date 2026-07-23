@@ -43,21 +43,33 @@ final class AppState {
     // MARK: - Public
 
     func refreshTimeline() async {
+        refreshGeneration += 1
+        let generation = refreshGeneration
+
         let cutoff = Calendar.current.date(byAdding: .day, value: -7, to: Date())!
         do {
             let snapshots = try await database.fetchSnapshots(since: cutoff)
             var built = SessionBuilder.buildSessions(from: snapshots)
             for i in built.indices {
-                built[i].apps = built[i].apps.filter { app in
-                    !ActivityTracker.ignoredBundles.contains(app.bundleId)
-                }
-                let summary = await summarizer.summarize(
-                    apps: built[i].apps,
-                    durationMinutes: built[i].durationMinutes
-                )
-                built[i].summary = summary.isEmpty ? nil : summary
+                built[i].apps = built[i].apps.filter { !ActivityTracker.ignoredBundles.contains($0.bundleId) }
             }
-            self.sessions = built.filter { !$0.apps.isEmpty }
+            let initial = built.filter { !$0.apps.isEmpty }
+            guard generation == refreshGeneration else { return }
+
+            // Phase 1: show sessions immediately with rule-based subtitles
+            self.sessions = initial
+
+            // Phase 2: enrich each session's subtitle with a Foundation Models phrase
+            for session in initial {
+                let summary = await summarizer.summarize(
+                    apps: session.apps,
+                    durationMinutes: session.durationMinutes
+                )
+                guard generation == refreshGeneration, !summary.isEmpty else { continue }
+                if let idx = self.sessions.firstIndex(where: { $0.id == session.id }) {
+                    self.sessions[idx].summary = summary
+                }
+            }
         } catch {
             // Keep existing sessions on failure
         }
@@ -127,6 +139,7 @@ final class AppState {
 
     // MARK: - Private
 
+    private var refreshGeneration = 0
     private var lastRefresh: Date = .distantPast
 
     private func refreshIfStale() async {

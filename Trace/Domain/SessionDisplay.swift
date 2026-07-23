@@ -123,29 +123,7 @@ enum SessionDisplay {
     static func builtInContext(for session: Session) -> String? {
         let ranked = SessionAppDisplay.rankedApps(session.apps)
         guard let primary = ranked.first else { return nil }
-
-        var parts: [String] = []
-
-        let primaryLines = SessionAppDisplay.contextLines(for: primary)
-            .map { $0.text.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }
-        parts.append(contentsOf: primaryLines.prefix(3))
-
-        for app in ranked.dropFirst() {
-            let lineText = SessionAppDisplay.bestDisplayLine(for: app)?
-                .text.trimmingCharacters(in: .whitespaces) ?? ""
-            if !lineText.isEmpty {
-                parts.append("\(app.appName): \(lineText)")
-            } else if shouldShowAppTimeShares(for: session),
-                      let share = appTimeShare(for: app, in: session) {
-                parts.append("\(app.appName) (\(share))")
-            } else {
-                parts.append(app.appName)
-            }
-        }
-
-        let joined = parts.filter { !$0.isEmpty }.joined(separator: " · ")
-        return joined.isEmpty ? nil : joined
+        return SessionAppDisplay.bestDisplayLine(for: primary)?.text
     }
 
     static func appTimeShare(for app: SessionApp, in session: Session) -> String? {

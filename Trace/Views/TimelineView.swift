@@ -30,9 +30,10 @@ struct TimelineView: View {
     // MARK: - Header
 
     private var header: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 10) {
             Text("Trace")
-                .font(.title3.weight(.semibold))
+                .font(.title.weight(.bold))
+                .shadow(color: .black.opacity(0.4), radius: 3, y: 1)
             if appState.isTracking {
                 PollCountdownRing(lastPoll: appState.lastPollDate)
             } else {
@@ -41,7 +42,8 @@ struct TimelineView: View {
                     .foregroundStyle(.orange)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
-                    .background(.orange.opacity(0.15), in: Capsule())
+                    .background(VisualEffectBackground())
+                    .clipShape(Capsule())
             }
             Spacer()
             Menu {
@@ -59,18 +61,18 @@ struct TimelineView: View {
                 }
             } label: {
                 Image(systemName: "ellipsis")
-                    .font(.callout.weight(.medium))
-                    .foregroundStyle(.secondary)
+                    .font(.callout.weight(.semibold))
                     .frame(width: 28, height: 28)
-                    .background(.quaternary.opacity(0.5), in: Circle())
+                    .background(VisualEffectBackground())
+                    .clipShape(Circle())
                     .contentShape(Circle())
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 16)
+        .padding(.horizontal, 18)
+        .padding(.top, 18)
         .padding(.bottom, 10)
     }
 
@@ -89,10 +91,19 @@ struct TimelineView: View {
     // MARK: - Empty state
 
     private var emptyState: some View {
-        ContentUnavailableView {
-            Label("No Activity Yet", systemImage: "clock.arrow.circlepath")
-        } description: {
-            Text("Trace records what you're working on.\nCheck back shortly.")
+        VStack(spacing: 0) {
+            ContentUnavailableView {
+                Label("No Activity Yet", systemImage: "clock.arrow.circlepath")
+            } description: {
+                Text("Trace records what you're working on.\nCheck back shortly.")
+            }
+            .padding(.vertical, 20)
+            .background(VisualEffectBackground())
+            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .padding(.horizontal, 14)
+            .padding(.top, 4)
+
+            Spacer()
         }
     }
 
@@ -102,11 +113,13 @@ struct TimelineView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 8) {
                 ForEach(dayGroups, id: \.label) { group in
-                    Text(group.label)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 4)
-                        .padding(.top, 6)
+                    if group.label != "Today" {
+                        Text(group.label)
+                            .font(.title3.weight(.bold))
+                            .shadow(color: .black.opacity(0.4), radius: 3, y: 1)
+                            .padding(.horizontal, 6)
+                            .padding(.top, 10)
+                    }
 
                     ForEach(group.sessions) { session in
                         SessionCardView(session: session)
@@ -117,8 +130,8 @@ struct TimelineView: View {
                     hiddenRowsFooter
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.bottom, 14)
+            .padding(.horizontal, 14)
+            .padding(.bottom, 16)
         }
     }
 
@@ -137,14 +150,15 @@ struct TimelineView: View {
             }
             .font(.caption.weight(.medium))
             .foregroundStyle(.secondary)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(.quaternary.opacity(0.5), in: Capsule())
+            .padding(.horizontal, 14)
+            .padding(.vertical, 7)
+            .background(VisualEffectBackground())
+            .clipShape(Capsule())
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
         .frame(maxWidth: .infinity)
-        .padding(.top, 4)
+        .padding(.top, 6)
     }
 
     // MARK: - Day grouping
