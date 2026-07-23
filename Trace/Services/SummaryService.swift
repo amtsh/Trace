@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 #if canImport(FoundationModels)
 import FoundationModels
 
@@ -138,16 +139,21 @@ actor SummaryService: Summarizer {
         let ranked = SessionAppDisplay.rankedApps(apps)
         let key = SummaryPrompt.cacheKey(for: ranked, durationMinutes: durationMinutes)
 
-        if let cached = cache[key] { return cached }
+        if let cached = cache[key] {
+            Logger.summary.debug("Cache hit for session summary")
+            return cached
+        }
 
         #if canImport(FoundationModels)
         if #available(macOS 26, *),
            let llm = await llmSummarize(apps: ranked, durationMinutes: durationMinutes) {
+            Logger.summary.info("Generated on-device summary")
             store(key: key, value: llm)
             return llm
         }
         #endif
 
+        Logger.summary.info("Using heuristic fallback summary")
         let fallback = SummaryPrompt.fallback(apps: ranked, durationMinutes: durationMinutes)
         store(key: key, value: fallback)
         return fallback
@@ -172,22 +178,36 @@ actor SummaryService: Summarizer {
     }
 
     private static func loadCache() -> [String: String] {
-        guard let url = cacheFileURL(),
-              let data = try? Data(contentsOf: url),
-              let decoded = try? JSONDecoder().decode([String: String].self, from: data)
-        else { return [:] }
-        return decoded
+        guard let url = cacheFileURL() else {
+            Logger.summary.error("\(SummaryError.cacheLoadFailed("missing application support directory").localizedDescription, privacy: .public)")
+            return [:]
+        }
+        do {
+            let data = try Data(contentsOf: url)
+            let decoded = try JSONDecoder().decode([String: String].self, from: data)
+            Logger.summary.debug("Loaded \(decoded.count) cached summaries")
+            return decoded
+        } catch {
+            Logger.summary.error("\(SummaryError.cacheLoadFailed(error.localizedDescription).localizedDescription, privacy: .public)")
+            return [:]
+        }
     }
 
     private static func saveCache(_ cache: [String: String]) {
-        guard let url = cacheFileURL(),
-              let data = try? JSONEncoder().encode(cache)
-        else { return }
-        try? FileManager.default.createDirectory(
-            at: url.deletingLastPathComponent(),
-            withIntermediateDirectories: true
-        )
-        try? data.write(to: url, options: .atomic)
+        guard let url = cacheFileURL() else {
+            Logger.summary.error("\(SummaryError.cacheSaveFailed("missing application support directory").localizedDescription, privacy: .public)")
+            return
+        }
+        do {
+            let data = try JSONEncoder().encode(cache)
+            try FileManager.default.createDirectory(
+                at: url.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            try data.write(to: url, options: .atomic)
+        } catch {
+            Logger.summary.error("\(SummaryError.cacheSaveFailed(error.localizedDescription).localizedDescription, privacy: .public)")
+        }
     }
 
     // MARK: - Apple Foundation Models
@@ -195,7 +215,10 @@ actor SummaryService: Summarizer {
     #if canImport(FoundationModels)
     @available(macOS 26, *)
     private func llmSummarize(apps: [SessionApp], durationMinutes: Int) async -> String? {
-        guard SystemLanguageModel.default.isAvailable else { return nil }
+        guard SystemLanguageModel.default.isAvailable else {
+            Logger.summary.debug("\(SummaryError.llmUnavailable.localizedDescription, privacy: .public)")
+            return nil
+        }
 
         for budget in SummaryPrompt.Budget.retrySequence {
             do {
@@ -217,8 +240,10 @@ actor SummaryService: Summarizer {
                 return text.isEmpty ? nil : text
             } catch let error as LanguageModelSession.GenerationError {
                 if case .exceededContextWindowSize = error { continue }
+                Logger.summary.error("\(SummaryError.llmGenerationFailed(error.localizedDescription).localizedDescription, privacy: .public)")
                 return nil
             } catch {
+                Logger.summary.error("\(SummaryError.llmGenerationFailed(error.localizedDescription).localizedDescription, privacy: .public)")
                 return nil
             }
         }

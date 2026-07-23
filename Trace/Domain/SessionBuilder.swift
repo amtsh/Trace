@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 
 enum SessionBuilder {
     private static let hardBreakSeconds: TimeInterval = 30 * 60
@@ -42,7 +43,12 @@ enum SessionBuilder {
         let active = snapshots
             .filter { !$0.isIdle }
             .sorted { $0.timestamp < $1.timestamp }
-        guard let first = active.first else { return [] }
+        guard let first = active.first else {
+            Logger.sessions.debug("No active snapshots to build sessions from")
+            return []
+        }
+
+        Logger.sessions.debug("Building sessions from \(active.count) active snapshots")
 
         var groups: [(snapshots: [Snapshot], project: String?)] = []
         var related: [Snapshot] = []
@@ -120,7 +126,9 @@ enum SessionBuilder {
         flushAtBoundary()
 
         let merged = absorbMicroGroups(groups)
-        return merged.map { makeSession(from: $0.snapshots, project: $0.project) }.reversed()
+        let sessions = Array(merged.map { makeSession(from: $0.snapshots, project: $0.project) }.reversed())
+        Logger.sessions.info("Built \(sessions.count) sessions from \(active.count) snapshots")
+        return sessions
     }
 
     private static func absorbMicroGroups(
@@ -342,13 +350,13 @@ enum SessionBuilder {
         return segments[1].components(separatedBy: "?").first
     }
 
-    static func projectFromFileURL(_ urlString: String) -> String? {
+    private static func projectFromFileURL(_ urlString: String) -> String? {
         var path = String(urlString.dropFirst("file://".count))
         if let decoded = path.removingPercentEncoding { path = decoded }
         return projectFromPath(path)
     }
 
-    static func projectFromPath(_ path: String) -> String? {
+    private static func projectFromPath(_ path: String) -> String? {
         let components = path.components(separatedBy: "/")
             .filter { !$0.isEmpty && $0 != "~" }
         guard !components.isEmpty else { return nil }

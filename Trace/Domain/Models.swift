@@ -1,5 +1,6 @@
 import Foundation
 
+/// A single point-in-time capture of foreground app context from the activity tracker.
 struct Snapshot: Sendable, Identifiable {
     let id: Int64
     let timestamp: Date
@@ -10,6 +11,7 @@ struct Snapshot: Sendable, Identifiable {
     let isIdle: Bool
 }
 
+/// A contiguous block of related work derived from snapshots, shown as one timeline card.
 struct Session: Sendable, Identifiable {
     let id: String
     let startTime: Date
@@ -23,6 +25,7 @@ struct Session: Sendable, Identifiable {
     let activity: String
 }
 
+/// One app's contribution to a session, aggregated from multiple snapshots.
 struct SessionApp: Sendable, Identifiable {
     /// Composite key: unique per session even if the same app bundle appears
     /// with different snapshot counts (prevents ForEach identity collisions).
@@ -51,6 +54,7 @@ struct SessionApp: Sendable, Identifiable {
     }
 }
 
+/// Raw context captured at poll time before it is persisted as a snapshot.
 struct CapturedContext: Sendable {
     let appName: String
     let appBundle: String
@@ -78,6 +82,7 @@ struct CapturedContext: Sendable {
     }
 }
 
+/// Outcome of attempting to reopen apps and documents from a session.
 struct RestoreResult: Sendable {
     let restored: [String]
     let failed: [(item: String, reason: String)]

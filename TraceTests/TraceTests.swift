@@ -60,11 +60,26 @@ struct SessionBuilderTests {
     }
 
     @Test func prefersXcodeProjectNameOverFolderName() {
-        let path = "/Users/dev/xcode/Trace/Trace/Views/TimelineView.swift"
-        #expect(SessionBuilder.projectFromPath(path) == "Trace")
+        let base = Date(timeIntervalSince1970: 1_700_000_000)
+        let fromPath = SessionBuilder.buildSessions(from: [
+            snapshot(
+                id: 1,
+                at: base,
+                title: "TimelineView.swift",
+                url: "file:///Users/dev/xcode/Trace/Trace/Views/TimelineView.swift"
+            ),
+        ])
+        #expect(fromPath.first?.activity == "Trace")
 
-        let projectURL = "file:///Users/dev/xcode/Trace/Trace.xcodeproj"
-        #expect(SessionBuilder.projectFromFileURL(projectURL) == "Trace")
+        let fromProject = SessionBuilder.buildSessions(from: [
+            snapshot(
+                id: 2,
+                at: base,
+                title: "Trace.xcodeproj",
+                url: "file:///Users/dev/xcode/Trace/Trace.xcodeproj"
+            ),
+        ])
+        #expect(fromProject.first?.activity == "Trace")
     }
 
     @Test func extractsProjectFromXcodeTitleWhenFileIsInSourceSubdir() {
@@ -974,5 +989,96 @@ struct StatsBuilderTests {
         #expect(stats.dailyActivity.count == 7)
         #expect(stats.topProjects.isEmpty)
         #expect(stats.averageFocusStars == nil)
+    }
+}
+
+struct SnapshotDatabaseTests {
+    private func tempDatabaseURL() -> URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("trace-test-\(UUID().uuidString).db")
+    }
+
+    @Test func roundTripWriteAndRead() async throws {
+        let url = tempDatabaseURL()
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let db = try SnapshotDatabase(databaseURL: url)
+        let timestamp = Date(timeIntervalSince1970: 1_700_000_000)
+        let context = CapturedContext(
+            appName: "Xcode",
+            appBundle: "com.apple.dt.Xcode",
+            windowTitle: "Trace — AppState.swift",
+            documentURL: "file:///Users/dev/Trace/Trace/AppState.swift",
+            timestamp: timestamp
+        )
+
+        try await db.save(context)
+        let loaded = try await db.load(since: timestamp.addingTimeInterval(-60))
+
+        #expect(loaded.count == 1)
+        #expect(loaded[0].appName == "Xcode")
+        #expect(loaded[0].windowTitle == "Trace — AppState.swift")
+    }
+
+    @Test func incrementalLoadAfterId() async throws {
+        let url = tempDatabaseURL()
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let db = try SnapshotDatabase(databaseURL: url)
+        let base = Date(timeIntervalSince1970: 1_700_000_000)
+
+        try await db.save(CapturedContext(
+            appName: "Xcode", appBundle: "com.apple.dt.Xcode", timestamp: base
+        ))
+        try await db.save(CapturedContext(
+            appName: "Safari",
+            appBundle: "com.apple.Safari",
+            timestamp: base.addingTimeInterval(60)
+        ))
+
+        let all = try await db.load(since: .distantPast)
+        #expect(all.count == 2)
+
+        let delta = try await db.load(afterId: all[0].id)
+        #expect(delta.count == 1)
+        #expect(delta[0].appName == "Safari")
+    }
+
+    @Test func pruneRemovesOlderSnapshots() async throws {
+        let url = tempDatabaseURL()
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let db = try SnapshotDatabase(databaseURL: url)
+        let old = Date(timeIntervalSince1970: 1_600_000_000)
+        let recent = Date(timeIntervalSince1970: 1_700_000_000)
+
+        try await db.save(CapturedContext(appName: "Old", appBundle: "old", timestamp: old))
+        try await db.save(CapturedContext(appName: "Recent", appBundle: "recent", timestamp: recent))
+
+        try await db.prune(before: Date(timeIntervalSince1970: 1_650_000_000))
+
+        let remaining = try await db.load(since: .distantPast)
+        #expect(remaining.count == 1)
+        #expect(remaining[0].appName == "Recent")
+    }
+}
+
+struct BundleRegistryTests {
+    @Test func detectsCommonBrowsers() {
+        let registry = BundleRegistry.defaults
+        #expect(registry.browsers.contains("com.google.Chrome"))
+        #expect(registry.browsers.contains("com.apple.Safari"))
+    }
+
+    @Test func detectsChatApps() {
+        let registry = BundleRegistry.defaults
+        #expect(registry.chatApps.contains("ai.perplexity.macv3"))
+        #expect(registry.chatApps.contains("com.anthropic.claude"))
+    }
+
+    @Test func detectsTerminals() {
+        let registry = BundleRegistry.defaults
+        #expect(registry.terminals.contains("com.apple.Terminal"))
+        #expect(registry.terminals.contains("com.googlecode.iterm2"))
     }
 }

@@ -146,7 +146,7 @@ enum SessionAppDisplay {
             }
         }
         for url in app.urls where url.hasPrefix("file://") {
-            if let project = SessionBuilder.projectFromFileURL(url) {
+            if let project = SessionBuilder.projectFromURL(url) {
                 return project
             }
         }

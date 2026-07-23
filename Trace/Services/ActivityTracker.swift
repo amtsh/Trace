@@ -1,8 +1,9 @@
 import AppKit
 import ApplicationServices
 import Carbon.HIToolbox
+import OSLog
 
-final class ActivityTracker {
+final class ActivityTracker: ActivityTracking {
     private let database: SnapshotDatabase
     private let ownBundleId: String
 
@@ -104,7 +105,11 @@ final class ActivityTracker {
         if let last = lastContext, last.appBundle == ctx.appBundle { return }
 
         lastContext = ctx
-        try? await database.append(ctx)
+        do {
+            try await database.save(ctx)
+        } catch {
+            Logger.tracking.error("Failed to save snapshot: \(error.localizedDescription, privacy: .public)")
+        }
         onSnapshotCaptured?()
     }
 
@@ -203,7 +208,11 @@ final class ActivityTracker {
         }
 
         lastContext = ctx
-        try? await database.append(ctx)
+        do {
+            try await database.save(ctx)
+        } catch {
+            Logger.tracking.error("Failed to save snapshot: \(error.localizedDescription, privacy: .public)")
+        }
         onSnapshotCaptured?()
     }
 
@@ -352,7 +361,7 @@ final class ActivityTracker {
 
     private func titleFromRepositoryPath(_ urlString: String?) -> String? {
         guard let urlString, urlString.hasPrefix("file://") else { return nil }
-        return SessionBuilder.projectFromFileURL(urlString)
+        return SessionBuilder.projectFromURL(urlString)
     }
 
     private func axWindowAttribute(_ app: AXUIElement, _ attr: String) -> String? {

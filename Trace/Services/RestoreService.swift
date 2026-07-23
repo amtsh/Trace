@@ -1,4 +1,5 @@
 import AppKit
+import OSLog
 
 final class RestoreService {
     func restore(_ session: Session) async -> RestoreResult {
@@ -21,7 +22,9 @@ final class RestoreService {
         guard let appURL = NSWorkspace.shared.urlForApplication(
             withBundleIdentifier: app.bundleId
         ) else {
-            return RestoreResult(restored: [], failed: [(app.appName, "App not found")])
+            let error = RestoreError.appNotFound(app.appName)
+            Logger.restore.error("\(error.localizedDescription, privacy: .public)")
+            return RestoreResult(restored: [], failed: [(app.appName, error.localizedDescription)])
         }
 
         do {
@@ -30,7 +33,9 @@ final class RestoreService {
             )
             restored.append(app.appName)
         } catch {
-            return RestoreResult(restored: [], failed: [(app.appName, error.localizedDescription)])
+            let restoreError = RestoreError.launchFailed(app.appName, underlying: error)
+            Logger.restore.error("\(restoreError.localizedDescription, privacy: .public)")
+            return RestoreResult(restored: [], failed: [(app.appName, restoreError.localizedDescription)])
         }
 
         try? await Task.sleep(for: .milliseconds(300))

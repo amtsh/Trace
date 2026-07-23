@@ -1,5 +1,6 @@
 import Foundation
 
+/// Focus score for a session based on how much time stayed on the primary task.
 struct ContextContinuity: Sendable {
     let stars: Int
     let explanation: String

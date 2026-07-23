@@ -1,9 +1,18 @@
 import Foundation
 
-protocol SnapshotStore: Sendable {
-    func append(_ context: CapturedContext) async throws
-    func fetchSnapshots(since date: Date) async throws -> [Snapshot]
-    func pruneOlderThan(_ date: Date) async throws
+/// Captures foreground-app context and persists snapshots on a schedule.
+protocol ActivityTracking: AnyObject {
+    func start()
+    func stop()
+    var onSnapshotCaptured: (() -> Void)? { get set }
+}
+
+/// Persists captured snapshots and serves them back for session building.
+protocol SessionPersisting: Sendable {
+    func save(_ snapshot: CapturedContext) async throws
+    func load(since: Date) async throws -> [Snapshot]
+    func load(afterId: Int64) async throws -> [Snapshot]
+    func prune(before: Date) async throws
     func lastSnapshot() async throws -> Snapshot?
 }
 

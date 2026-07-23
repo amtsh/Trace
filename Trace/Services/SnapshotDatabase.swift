@@ -1,21 +1,25 @@
 import Foundation
+import OSLog
 import SQLite3
 
 nonisolated(unsafe) private let SQLITE_TRANSIENT_DESTRUCTOR = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
-actor SnapshotDatabase: SnapshotStore {
+actor SnapshotDatabase: SessionPersisting {
     nonisolated(unsafe) private var db: OpaquePointer?
 
     init() throws {
-        let appSupport = FileManager.default.urls(
-            for: .applicationSupportDirectory, in: .userDomainMask
-        ).first!
-        let dir = appSupport.appendingPathComponent("Trace", isDirectory: true)
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let path = dir.appendingPathComponent("trace.db").path
+        try self.init(databaseURL: Self.defaultDatabaseURL())
+    }
+
+    init(databaseURL: URL) throws {
+        let path = databaseURL.path
+        let directory = databaseURL.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
         guard sqlite3_open(path, &db) == SQLITE_OK else {
-            throw DBError.open(db.map { String(cString: sqlite3_errmsg($0)) } ?? "unknown")
+            let message = db.map { String(cString: sqlite3_errmsg($0)) } ?? "unknown"
+            Logger.db.error("Open failed at \(path, privacy: .public): \(message, privacy: .public)")
+            throw DatabaseError.openFailed(message)
         }
 
         let sql = """
@@ -32,17 +36,20 @@ actor SnapshotDatabase: SnapshotStore {
         """
         var err: UnsafeMutablePointer<CChar>?
         guard sqlite3_exec(db, sql, nil, nil, &err) == SQLITE_OK else {
-            let msg = err.map { String(cString: $0) } ?? "unknown"
+            let message = err.map { String(cString: $0) } ?? "unknown"
             sqlite3_free(err)
-            throw DBError.exec(msg)
+            Logger.db.error("Schema init failed: \(message, privacy: .public)")
+            throw DatabaseError.execFailed(message)
         }
+
+        Logger.db.info("Opened database at \(path, privacy: .public)")
     }
 
     deinit { sqlite3_close(db) }
 
-    // MARK: - SnapshotStore
+    // MARK: - SessionPersisting
 
-    func append(_ ctx: CapturedContext) throws {
+    func save(_ snapshot: CapturedContext) throws {
         let sql = """
             INSERT INTO snapshots
             (timestamp, app_bundle, app_name, window_title, doc_url, is_idle)
@@ -51,20 +58,22 @@ actor SnapshotDatabase: SnapshotStore {
         let stmt = try prepare(sql)
         defer { sqlite3_finalize(stmt) }
 
-        // Use ctx.timestamp — captured at event time, not actor-processing time.
-        sqlite3_bind_double(stmt, 1, ctx.timestamp.timeIntervalSince1970)
-        bindText(stmt, 2, ctx.appBundle)
-        bindText(stmt, 3, ctx.appName)
-        bindText(stmt, 4, ctx.windowTitle)
-        bindText(stmt, 5, ctx.documentURL)
-        sqlite3_bind_int(stmt, 6, ctx.isIdle ? 1 : 0)
+        sqlite3_bind_double(stmt, 1, snapshot.timestamp.timeIntervalSince1970)
+        bindText(stmt, 2, snapshot.appBundle)
+        bindText(stmt, 3, snapshot.appName)
+        bindText(stmt, 4, snapshot.windowTitle)
+        bindText(stmt, 5, snapshot.documentURL)
+        sqlite3_bind_int(stmt, 6, snapshot.isIdle ? 1 : 0)
 
         guard sqlite3_step(stmt) == SQLITE_DONE else {
-            throw DBError.step(errMsg)
+            Logger.db.error("Insert failed: \(self.errMsg, privacy: .public)")
+            throw DatabaseError.writeFailed(errMsg)
         }
+
+        Logger.db.debug("Saved snapshot for \(snapshot.appName, privacy: .public)")
     }
 
-    func fetchSnapshots(since date: Date) throws -> [Snapshot] {
+    func load(since date: Date) throws -> [Snapshot] {
         let sql = """
             SELECT id, timestamp, app_bundle, app_name, window_title, doc_url, is_idle
             FROM snapshots WHERE timestamp >= ? ORDER BY timestamp ASC
@@ -77,6 +86,24 @@ actor SnapshotDatabase: SnapshotStore {
         while sqlite3_step(stmt) == SQLITE_ROW {
             rows.append(readRow(stmt))
         }
+        Logger.db.debug("Loaded \(rows.count) snapshots since cutoff")
+        return rows
+    }
+
+    func load(afterId id: Int64) throws -> [Snapshot] {
+        let sql = """
+            SELECT id, timestamp, app_bundle, app_name, window_title, doc_url, is_idle
+            FROM snapshots WHERE id > ? ORDER BY timestamp ASC
+        """
+        let stmt = try prepare(sql)
+        defer { sqlite3_finalize(stmt) }
+        sqlite3_bind_int64(stmt, 1, id)
+
+        var rows: [Snapshot] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            rows.append(readRow(stmt))
+        }
+        Logger.db.debug("Loaded \(rows.count) snapshots after id \(id)")
         return rows
     }
 
@@ -90,14 +117,46 @@ actor SnapshotDatabase: SnapshotStore {
         return sqlite3_step(stmt) == SQLITE_ROW ? readRow(stmt) : nil
     }
 
-    func pruneOlderThan(_ date: Date) throws {
+    func prune(before date: Date) throws {
         let stmt = try prepare("DELETE FROM snapshots WHERE timestamp < ?")
         defer { sqlite3_finalize(stmt) }
         sqlite3_bind_double(stmt, 1, date.timeIntervalSince1970)
-        _ = sqlite3_step(stmt)
+        guard sqlite3_step(stmt) == SQLITE_DONE else {
+            Logger.db.error("Prune failed: \(self.errMsg, privacy: .public)")
+            throw DatabaseError.writeFailed(errMsg)
+        }
+
+        let deleted = sqlite3_changes(db)
+        if deleted > 0 {
+            Logger.db.info("Pruned \(deleted) snapshots before cutoff")
+        }
+
+        if deleted >= 500 {
+            Logger.db.info("Running VACUUM after deleting \(deleted) rows")
+            try vacuum()
+        }
     }
 
     // MARK: - Helpers
+
+    private static func defaultDatabaseURL() -> URL {
+        let appSupport = FileManager.default.urls(
+            for: .applicationSupportDirectory, in: .userDomainMask
+        ).first!
+        return appSupport
+            .appendingPathComponent("Trace", isDirectory: true)
+            .appendingPathComponent("trace.db")
+    }
+
+    private func vacuum() throws {
+        var err: UnsafeMutablePointer<CChar>?
+        guard sqlite3_exec(db, "VACUUM", nil, nil, &err) == SQLITE_OK else {
+            let message = err.map { String(cString: $0) } ?? errMsg
+            sqlite3_free(err)
+            Logger.db.error("VACUUM failed: \(message, privacy: .public)")
+            throw DatabaseError.execFailed(message)
+        }
+    }
 
     private func readRow(_ s: OpaquePointer) -> Snapshot {
         Snapshot(
@@ -126,24 +185,12 @@ actor SnapshotDatabase: SnapshotStore {
     private func prepare(_ sql: String) throws -> OpaquePointer {
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
-            throw DBError.prepare(errMsg)
+            throw DatabaseError.prepareFailed(errMsg)
         }
         return stmt!
     }
 
     private var errMsg: String {
         db.map { String(cString: sqlite3_errmsg($0)) } ?? "no db"
-    }
-}
-
-enum DBError: Error, LocalizedError {
-    case open(String), prepare(String), step(String), exec(String)
-    var errorDescription: String? {
-        switch self {
-        case .open(let m): "DB open failed: \(m)"
-        case .prepare(let m): "Prepare failed: \(m)"
-        case .step(let m): "Step failed: \(m)"
-        case .exec(let m): "Exec failed: \(m)"
-        }
     }
 }

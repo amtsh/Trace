@@ -34,7 +34,10 @@ struct TimelineView: View {
             resetForPresentation()
         }
         .onChange(of: showMenu) {
-            appState.isHeaderMenuOpen = showMenu
+            syncOutsideDismissBlock()
+        }
+        .onChange(of: showClearConfirmation) {
+            syncOutsideDismissBlock()
         }
         .confirmationDialog(
             "Clear All Data?",
@@ -56,7 +59,16 @@ struct TimelineView: View {
             visibleCount = Self.pageSize
             showMenu = false
             showStats = false
+            showClearConfirmation = false
         }
+        syncOutsideDismissBlock()
+    }
+
+    private func syncOutsideDismissBlock() {
+        appState.updateOutsideDismissBlock(
+            menuOpen: showMenu,
+            clearDialogOpen: showClearConfirmation
+        )
     }
 
     // MARK: - Header

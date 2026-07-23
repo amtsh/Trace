@@ -136,6 +136,13 @@ enum DS {
         static let windowHeight: CGFloat = 380
     }
 
+    // MARK: Storage
+    enum Storage {
+        static let retentionDays = 7
+        /// How often to prune expired snapshots and vacuum the database.
+        static let pruneInterval: TimeInterval = 24 * 60 * 60
+    }
+
     // MARK: Card limits
     enum Card {
         /// Max secondary app icons shown in collapsed card row

@@ -43,6 +43,7 @@ final class SidebarPanelController {
     }
 
     private var swipePhase: SwipePhase = .idle
+    private var lastSeenDismissBlockGeneration = 0
 
     private init() {}
 
@@ -253,7 +254,11 @@ final class SidebarPanelController {
         ) { [weak self] _ in
             DispatchQueue.main.async {
                 guard let self, self.isOpen, let panel = self.panel else { return }
-                if self.appState?.isHeaderMenuOpen == true { return }
+                if self.appState?.isOutsideDismissBlocked == true { return }
+                if let gen = self.appState?.dismissBlockGeneration, gen != self.lastSeenDismissBlockGeneration {
+                    self.lastSeenDismissBlockGeneration = gen
+                    return
+                }
                 if !panel.frame.contains(NSEvent.mouseLocation) {
                     self.hide()
                 }
@@ -262,6 +267,13 @@ final class SidebarPanelController {
 
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             if event.keyCode == 53 {
+                if self?.appState?.isOutsideDismissBlocked == true {
+                    return event
+                }
+                if let self, let gen = self.appState?.dismissBlockGeneration, gen != self.lastSeenDismissBlockGeneration {
+                    self.lastSeenDismissBlockGeneration = gen
+                    return event
+                }
                 DispatchQueue.main.async { self?.hide() }
                 return nil
             }

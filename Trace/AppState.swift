@@ -1,5 +1,6 @@
 import AppKit
 import Observation
+import OSLog
 
 @Observable
 final class AppState {
@@ -12,6 +13,8 @@ final class AppState {
     var databaseError: String? = nil
     private(set) var panelPresentationGeneration = 0
     var isHeaderMenuOpen = false
+    private(set) var isOutsideDismissBlocked = false
+    private(set) var dismissBlockGeneration = 0
     private(set) var hiddenSessionIds: Set<String>
     private(set) var summarizingSessionIds: Set<String> = []
 
@@ -25,22 +28,27 @@ final class AppState {
         self.hiddenSessionIds = Set(UserDefaults.standard.stringArray(forKey: "hiddenSessionIds") ?? [])
         self.hasAccessibilityPermission = PermissionManager.hasAccessibilityPermission
 
+        let db: SnapshotDatabase
+        let activityTracker: ActivityTracker
         do {
-            let db = try SnapshotDatabase()
-            self.database = db
-            self.tracker = ActivityTracker(database: db)
+            db = try SnapshotDatabase()
+            activityTracker = ActivityTracker(database: db)
         } catch {
             self.database = nil
             self.tracker = nil
             self.databaseError = error.localizedDescription
+            Logger.db.error("Database init failed: \(error.localizedDescription, privacy: .public)")
             return
         }
 
-        tracker!.onPollCompleted = { [weak self] in
+        self.database = db
+        self.tracker = activityTracker
+
+        activityTracker.onPollCompleted = { [weak self] in
             Task { @MainActor in self?.lastPollDate = .now }
         }
 
-        tracker!.onSnapshotCaptured = { [weak self] in
+        activityTracker.onSnapshotCaptured = { [weak self] in
             Task { @MainActor in
                 await self?.refreshIfStale()
             }
@@ -48,18 +56,21 @@ final class AppState {
 
         Task {
             await pruneAndLoad()
-            tracker!.start()
+            activityTracker.start()
         }
     }
 
     func refreshTimeline() async {
-        guard let database else { return }
+        guard database != nil else { return }
         refreshGeneration += 1
         let generation = refreshGeneration
 
-        let cutoff = Calendar.current.date(byAdding: .day, value: -7, to: Date())!
+        await maybePrune()
+
         do {
-            let snapshots = try await database.fetchSnapshots(since: cutoff)
+            let (snapshots, hasChanges) = try await loadSnapshots(forceFullReload: false)
+            guard hasChanges else { return }
+
             var built = SessionBuilder.buildSessions(from: snapshots)
             for i in built.indices {
                 built[i].apps = built[i].apps.filter { !ActivityTracker.ignoredBundles.contains($0.bundleId) }
@@ -101,19 +112,33 @@ final class AppState {
                 }
             }
         } catch {
-            // Keep existing sessions on failure
+            Logger.sessions.error("Timeline refresh failed: \(error.localizedDescription, privacy: .public)")
         }
     }
 
     func panelDidPresent() {
         panelPresentationGeneration += 1
         isHeaderMenuOpen = false
+        isOutsideDismissBlocked = false
 
         let defaultExpanded = sessions
             .sorted { $0.startTime > $1.startTime }
             .first(where: { !hiddenSessionIds.contains($0.id) })
 
         expandedSessionId = defaultExpanded?.id
+    }
+
+    func updateOutsideDismissBlock(menuOpen: Bool, clearDialogOpen: Bool) {
+        isHeaderMenuOpen = menuOpen
+        let blocked = menuOpen || clearDialogOpen
+        if blocked {
+            isOutsideDismissBlocked = true
+            return
+        }
+
+        guard isOutsideDismissBlocked else { return }
+        isOutsideDismissBlocked = false
+        dismissBlockGeneration += 1
     }
 
     func isSessionHidden(_ session: Session) -> Bool {
@@ -169,7 +194,10 @@ final class AppState {
     func wipeAllData() async {
         guard let database else { return }
         tracker?.stop()
-        try? await database.pruneOlderThan(Date.distantFuture)
+        try? await database.prune(before: Date.distantFuture)
+        snapshotCache = []
+        lastPruneDate = Date()
+        needsSnapshotReload = false
         sessions = []
         tracker?.start()
         isTracking = true
@@ -187,6 +215,13 @@ final class AppState {
 
     private var refreshGeneration = 0
     private var lastRefresh: Date = .distantPast
+    private var lastPruneDate: Date = .distantPast
+    private var snapshotCache: [Snapshot] = []
+    private var needsSnapshotReload = false
+
+    private func retentionCutoff() -> Date {
+        Calendar.current.date(byAdding: .day, value: -DS.Storage.retentionDays, to: Date())!
+    }
 
     private func refreshIfStale() async {
         guard Date().timeIntervalSince(lastRefresh) > 15 else { return }
@@ -195,12 +230,59 @@ final class AppState {
     }
 
     private func pruneAndLoad() async {
-        guard let database else { return }
-        let cutoff = Calendar.current.date(byAdding: .day, value: -7, to: Date())!
-        try? await database.pruneOlderThan(cutoff)
-        pruneHiddenIds(before: cutoff)
+        await performPrune(force: true)
+        snapshotCache = []
         await refreshTimeline()
         lastRefresh = Date()
+    }
+
+    private func maybePrune() async {
+        guard Date().timeIntervalSince(lastPruneDate) >= DS.Storage.pruneInterval else { return }
+        await performPrune(force: false)
+    }
+
+    private func performPrune(force: Bool) async {
+        guard let database else { return }
+        if !force, Date().timeIntervalSince(lastPruneDate) < DS.Storage.pruneInterval { return }
+
+        let cutoff = retentionCutoff()
+        do {
+            try await database.prune(before: cutoff)
+        } catch {
+            Logger.db.error("Scheduled prune failed: \(error.localizedDescription, privacy: .public)")
+            return
+        }
+
+        lastPruneDate = Date()
+        pruneHiddenIds(before: cutoff)
+        snapshotCache.removeAll { $0.timestamp < cutoff }
+        needsSnapshotReload = true
+    }
+
+    private func loadSnapshots(forceFullReload: Bool) async throws -> (snapshots: [Snapshot], hasChanges: Bool) {
+        guard let database else { return ([], false) }
+
+        let cutoff = retentionCutoff()
+
+        if forceFullReload || needsSnapshotReload || snapshotCache.isEmpty {
+            needsSnapshotReload = false
+            snapshotCache = try await database.load(since: cutoff)
+            return (snapshotCache, true)
+        }
+
+        guard let lastCachedId = snapshotCache.last?.id else {
+            snapshotCache = try await database.load(since: cutoff)
+            return (snapshotCache, true)
+        }
+
+        let delta = try await database.load(afterId: lastCachedId)
+        guard !delta.isEmpty else {
+            return (snapshotCache, false)
+        }
+
+        snapshotCache.append(contentsOf: delta)
+        snapshotCache.removeAll { $0.timestamp < cutoff }
+        return (snapshotCache, true)
     }
 
     private func pruneHiddenIds(before cutoff: Date) {
