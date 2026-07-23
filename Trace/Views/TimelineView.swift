@@ -2,6 +2,8 @@ import SwiftUI
 
 struct TimelineView: View {
     @Environment(AppState.self) private var appState
+    @State private var showClearConfirmation = false
+
     var body: some View {
         Group {
             if appState.sessions.isEmpty {
@@ -23,66 +25,86 @@ struct TimelineView: View {
         .onAppear {
             appState.checkAccessibility()
         }
+        // Consistent destructive confirmation using SwiftUI, not NSAlert.runModal()
+        .confirmationDialog(
+            "Clear All Data?",
+            isPresented: $showClearConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Clear Everything", role: .destructive) {
+                Task { await appState.wipeAllData() }
+            }
+        } message: {
+            Text("This permanently deletes all recorded activity. This cannot be undone.")
+        }
     }
 
     // MARK: - Header
 
     private var header: some View {
-        HStack(spacing: 10) {
-            Text("Trace")
-                .font(.title.weight(.bold))
-                .shadow(color: .black.opacity(0.4), radius: 3, y: 1)
-            if appState.isTracking {
-                PollCountdownRing(lastPoll: appState.lastPollDate)
-            } else {
-                Text("Paused")
-                    .font(.caption2.weight(.medium))
-                    .foregroundStyle(.orange)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(VisualEffectBackground())
-                    .clipShape(Capsule())
-            }
-            Spacer()
-            Menu {
-                Toggle(appState.isTracking ? "Tracking is ON" : "Turn ON Tracking", isOn: .init(
-                    get: { appState.isTracking },
-                    set: { _ in appState.toggleTracking() }
-                ))
-                Divider()
-                Button("Clear All Data…", role: .destructive) {
-                    confirmAndClearData()
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                Text("Trace")
+                    .font(.title.weight(.bold))
+                    .shadow(color: .black.opacity(0.4), radius: 3, y: 1)
+                if appState.isTracking {
+                    PollCountdownRing(lastPoll: appState.lastPollDate)
+                } else {
+                    Text("Paused")
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(.orange)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(VisualEffectBackground())
+                        .clipShape(Capsule())
                 }
-                Divider()
-                Button("Quit Trace") {
-                    NSApplication.shared.terminate(nil)
+                Spacer()
+                Menu {
+                    Toggle(appState.isTracking ? "Tracking is ON" : "Turn ON Tracking", isOn: .init(
+                        get: { appState.isTracking },
+                        set: { _ in appState.toggleTracking() }
+                    ))
+                    Divider()
+                    Button("Clear All Data\u2026", role: .destructive) {
+                        showClearConfirmation = true
+                    }
+                    Divider()
+                    Button("Quit Trace") {
+                        NSApplication.shared.terminate(nil)
+                    }
+                } label: {
+                    Text("Menu")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.white.opacity(0.75))
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 7)
+                        .background(Color.black.opacity(0.55))
+                        .clipShape(Capsule())
                 }
-            } label: {
-                Text("Menu")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.white.opacity(0.75))
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 7)
-                    .background(Color.black.opacity(0.55))
-                    .clipShape(Capsule())
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
-        }
-        .padding(.top, 8)
-        .padding(.bottom, 10)
-    }
+            .padding(.top, 8)
+            .padding(.bottom, 10)
 
-    private func confirmAndClearData() {
-        let alert = NSAlert()
-        alert.messageText = "Clear All Data?"
-        alert.informativeText = "This will permanently delete all recorded activity. This cannot be undone."
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: "Clear")
-        alert.addButton(withTitle: "Cancel")
-        if alert.runModal() == .alertFirstButtonReturn {
-            Task { await appState.wipeAllData() }
+            // Single accessibility warning — shown once here, not per-card.
+            if !appState.hasAccessibilityPermission {
+                Button {
+                    appState.requestAccessibility()
+                } label: {
+                    Label("Grant Accessibility for window details", systemImage: "exclamationmark.triangle")
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(Color.orange.opacity(0.12))
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .padding(.bottom, 6)
+            }
         }
     }
 
@@ -131,12 +153,16 @@ struct TimelineView: View {
     // MARK: - Day grouping
 
     private var dayGroups: [DayGroup] {
+        // Explicit sort: newest first, so grouping is always correct
+        // regardless of the order sessions arrive from AppState.
+        let sorted = appState.sessions.sorted { $0.startTime > $1.startTime }
+
         var groups: [DayGroup] = []
         var currentKey = ""
         var currentLabel = ""
         var currentSessions: [Session] = []
 
-        for session in appState.sessions {
+        for session in sorted {
             let key = dayKey(session.startTime)
             if key != currentKey {
                 if !currentSessions.isEmpty {
@@ -172,6 +198,9 @@ private struct DayGroup {
     let sessions: [Session]
 }
 
+/// Countdown ring showing time until next poll.
+/// Uses a single `TimelineView` that only runs while tracking is active,
+/// avoiding a constant 1Hz redraw when the panel is hidden but hosting view persists.
 private struct PollCountdownRing: View {
     let lastPoll: Date
     private let interval: TimeInterval = 30

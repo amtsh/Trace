@@ -76,7 +76,6 @@ struct SessionCardView: View {
 
     private var card: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // NC-style collapsed header: large icon left, content right
             HStack(alignment: .top, spacing: 12) {
                 if let app = primaryApp {
                     AppIconBadge(app: app, size: 40)
@@ -171,6 +170,7 @@ struct SessionCardView: View {
                             Button {
                                 Task { await restoreSession() }
                             } label: {
+                                // Show spinner only — restoreMessage (if any) is displayed above.
                                 if isRestoring {
                                     ProgressView().controlSize(.mini)
                                 } else {
@@ -180,20 +180,14 @@ struct SessionCardView: View {
                             }
                             .foregroundStyle(.secondary)
                             .buttonStyle(.plain)
+                            .disabled(isRestoring)
                         }
                     }
                 }
                 .padding(14)
                 .transition(.blurReplace)
             }
-
-            if !appState.hasAccessibilityPermission {
-                Label("Grant Accessibility for window details", systemImage: "exclamationmark.triangle")
-                    .font(.caption2)
-                    .foregroundStyle(.orange)
-                    .padding(.horizontal, 14)
-                    .padding(.bottom, 10)
-            }
+            // Accessibility warning removed from here — shown once in TimelineView header instead.
         }
         .glassEffect(in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .shadow(color: .black.opacity(0.35), radius: 8, x: 0, y: 4)
@@ -227,10 +221,10 @@ struct SessionCardView: View {
 
     private func restoreSession() async {
         isRestoring = true
-        restoreMessage = nil
+        restoreMessage = nil  // clear before starting so no stale message during restore
         let result = await appState.restoreSession(session)
-        restoreMessage = RestoreFeedback.message(for: result)
         isRestoring = false
+        restoreMessage = RestoreFeedback.message(for: result)
     }
 }
 
@@ -327,7 +321,7 @@ enum RestoreFeedback {
 
         if opened == 0 && failed > 0 {
             let prefix = appName.map { "Couldn't reopen \($0)" } ?? "Couldn't reopen session"
-            return "\(prefix) — \(result.failed[0].reason)"
+            return "\(prefix) \u2014 \(result.failed[0].reason)"
         }
         if failed == 0 {
             let prefix = appName.map { "Reopened \($0)" } ?? "Reopened session"
@@ -335,7 +329,7 @@ enum RestoreFeedback {
             return prefix + detail
         }
         let prefix = appName.map { "Reopened \($0)" } ?? "Reopened session"
-        return "\(prefix) — \(opened) opened, \(failed) couldn't"
+        return "\(prefix) \u2014 \(opened) opened, \(failed) couldn't"
     }
 }
 
@@ -344,10 +338,12 @@ enum RestoreFeedback {
 struct AppIconBadge: View {
     let app: SessionApp
     var size: CGFloat = 20
+    /// Icon loaded asynchronously off the main thread to avoid blocking scroll.
+    @State private var icon: NSImage? = nil
 
     var body: some View {
         Group {
-            if let icon = appIcon {
+            if let icon {
                 Image(nsImage: icon)
                     .resizable()
                     .frame(width: size, height: size)
@@ -360,12 +356,17 @@ struct AppIconBadge: View {
             }
         }
         .help(app.appName)
+        .task(id: app.bundleId) {
+            icon = await loadIcon(bundleId: app.bundleId)
+        }
     }
 
-    private var appIcon: NSImage? {
-        guard let url = NSWorkspace.shared.urlForApplication(
-            withBundleIdentifier: app.bundleId
-        ) else { return nil }
-        return NSWorkspace.shared.icon(forFile: url.path)
+    private func loadIcon(bundleId: String) async -> NSImage? {
+        await Task.detached(priority: .utility) {
+            guard let url = NSWorkspace.shared.urlForApplication(
+                withBundleIdentifier: bundleId
+            ) else { return nil }
+            return NSWorkspace.shared.icon(forFile: url.path)
+        }.value
     }
 }
