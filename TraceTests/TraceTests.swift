@@ -874,3 +874,105 @@ struct SessionAppDisplayTests {
         #expect(ranked.first?.appName == "Xcode")
     }
 }
+
+struct StatsBuilderTests {
+    private func session(
+        id: String = UUID().uuidString,
+        startingAt start: Date,
+        durationSeconds: Int,
+        activity: String = "Trace"
+    ) -> Session {
+        Session(
+            id: id,
+            startTime: start,
+            endTime: start.addingTimeInterval(TimeInterval(durationSeconds)),
+            durationSeconds: durationSeconds,
+            apps: [],
+            activity: activity
+        )
+    }
+
+    @Test func todayAndWeekTotalsSumDurations() {
+        let now = Date()
+        let calendar = Calendar.current
+        let earlierToday = calendar.date(byAdding: .hour, value: -2, to: now)!
+        let twoDaysAgo = calendar.date(byAdding: .day, value: -2, to: now)!
+
+        let stats = StatsBuilder.build(
+            from: [
+                session(startingAt: earlierToday, durationSeconds: 600),
+                session(startingAt: earlierToday, durationSeconds: 300),
+                session(startingAt: twoDaysAgo, durationSeconds: 1200),
+            ],
+            now: now
+        )
+
+        #expect(stats.todayActiveSeconds == 900)
+        #expect(stats.weekActiveSeconds == 2100)
+        #expect(stats.sessionCount == 3)
+    }
+
+    @Test func dailyActivityAlwaysHasSevenBucketsOldestFirst() {
+        let now = Date()
+        let stats = StatsBuilder.build(
+            from: [session(startingAt: now, durationSeconds: 600)],
+            now: now
+        )
+
+        #expect(stats.dailyActivity.count == 7)
+        #expect(stats.dailyActivity.last?.label == "Today")
+        #expect(stats.dailyActivity.last?.activeSeconds == 600)
+        // Days with no sessions still appear, at zero.
+        #expect(stats.dailyActivity.first?.activeSeconds == 0)
+        let ordered = stats.dailyActivity.map(\.date)
+        #expect(ordered == ordered.sorted())
+    }
+
+    @Test func deepWorkCountsOnlyLongSessions() {
+        let now = Date()
+        let stats = StatsBuilder.build(
+            from: [
+                session(startingAt: now, durationSeconds: StatsBuilder.deepWorkThresholdSeconds),
+                session(startingAt: now, durationSeconds: StatsBuilder.deepWorkThresholdSeconds - 1),
+                session(startingAt: now, durationSeconds: 60),
+            ],
+            now: now
+        )
+
+        #expect(stats.deepWorkCount == 1)
+        #expect(stats.longestSessionSeconds == StatsBuilder.deepWorkThresholdSeconds)
+    }
+
+    @Test func topProjectsAggregateByTitleSortedByTime() {
+        let now = Date()
+        let stats = StatsBuilder.build(
+            from: [
+                session(startingAt: now, durationSeconds: 300, activity: "Trace"),
+                session(startingAt: now, durationSeconds: 600, activity: "Trace"),
+                session(startingAt: now, durationSeconds: 1200, activity: "Landing"),
+            ],
+            now: now
+        )
+
+        #expect(stats.topProjects.first?.name == "Landing")
+        #expect(stats.topProjects.first?.activeSeconds == 1200)
+        let trace = stats.topProjects.first { $0.name == "Trace" }
+        #expect(trace?.activeSeconds == 900)
+        #expect(trace?.sessionCount == 2)
+    }
+
+    @Test func durationLabelFormatsHoursAndMinutes() {
+        #expect(StatsBuilder.durationLabel(0) == "0m")
+        #expect(StatsBuilder.durationLabel(42 * 60) == "42m")
+        #expect(StatsBuilder.durationLabel(60 * 60) == "1h")
+        #expect(StatsBuilder.durationLabel(125 * 60) == "2h 5m")
+    }
+
+    @Test func emptyInputProducesEmptyStats() {
+        let stats = StatsBuilder.build(from: [], now: Date())
+        #expect(stats.isEmpty)
+        #expect(stats.dailyActivity.count == 7)
+        #expect(stats.topProjects.isEmpty)
+        #expect(stats.averageFocusStars == nil)
+    }
+}
