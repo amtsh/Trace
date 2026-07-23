@@ -197,7 +197,7 @@ struct SessionCardView: View {
         }
         .glassEffect(in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .shadow(color: .black.opacity(0.35), radius: 8, x: 0, y: 4)
-        .overlay(alignment: .topTrailing) {
+        .overlay(alignment: .topLeading) {
             if isHovering {
                 Button {
                     withAnimation(.smooth(duration: 0.2)) {
@@ -212,7 +212,7 @@ struct SessionCardView: View {
                         .clipShape(Circle())
                 }
                 .buttonStyle(.plain)
-                .padding(8)
+                .offset(x: -8, y: -8)
                 .transition(.opacity.combined(with: .scale(scale: 0.8)))
             }
         }
