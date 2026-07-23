@@ -10,6 +10,7 @@ final class AppState {
     var lastPollDate: Date = .now
     var expandedSessionId: String?
     var databaseError: String? = nil
+    private(set) var panelPresentationGeneration = 0
     private(set) var hiddenSessionIds: Set<String>
     private(set) var summarizingSessionIds: Set<String> = []
 
@@ -50,8 +51,6 @@ final class AppState {
         }
     }
 
-    // MARK: - Public
-
     func refreshTimeline() async {
         guard let database else { return }
         refreshGeneration += 1
@@ -75,6 +74,9 @@ final class AppState {
 
             guard generation == refreshGeneration else { return }
             self.sessions = initial
+            if expandedSessionId == nil, let latest = initial.first {
+                expandedSessionId = latest.id
+            }
 
             let recentCutoff = Date().addingTimeInterval(-30 * 60)
             for session in initial where session.summary == nil || session.endTime > recentCutoff {
@@ -100,6 +102,10 @@ final class AppState {
         } catch {
             // Keep existing sessions on failure
         }
+    }
+
+    func panelDidPresent() {
+        panelPresentationGeneration += 1
     }
 
     func isSessionHidden(_ session: Session) -> Bool {

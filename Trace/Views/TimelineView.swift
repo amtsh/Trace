@@ -4,6 +4,10 @@ struct TimelineView: View {
     @Environment(AppState.self) private var appState
     @State private var showClearConfirmation = false
     @State private var showStats = false
+    @State private var showMenu = false
+    @State private var visibleCount = 10
+
+    private static let pageSize = 10
 
     var body: some View {
         Group {
@@ -26,6 +30,9 @@ struct TimelineView: View {
         .onAppear {
             appState.checkAccessibility()
         }
+        .onChange(of: appState.panelPresentationGeneration) {
+            visibleCount = Self.pageSize
+        }
         .confirmationDialog(
             "Clear All Data?",
             isPresented: $showClearConfirmation,
@@ -44,15 +51,19 @@ struct TimelineView: View {
     private var header: some View {
         VStack(spacing: 0) {
             HStack(spacing: DS.Spacing.md) {
-                Text("Trace")
-                    .font(.title.weight(.bold))
-                    .shadow(
-                        color: .black.opacity(DS.Opacity.shadowText),
-                        radius: DS.Shadow.textRadius,
-                        y: DS.Shadow.textY
-                    )
+                HStack(spacing: DS.Spacing.sm) {
+                    Text("Trace")
+                        .font(.title.weight(.bold))
+                        .shadow(
+                            color: .black.opacity(DS.Opacity.shadowText),
+                            radius: DS.Shadow.textRadius,
+                            y: DS.Shadow.textY
+                        )
 
-                headerMenu
+                    if !appState.sessions.isEmpty {
+                        statsToggle
+                    }
+                }
 
                 if !appState.isTracking {
                     Text("Paused")
@@ -66,9 +77,9 @@ struct TimelineView: View {
 
                 Spacer()
 
-                if !appState.sessions.isEmpty {
-                    statsToggle
-                }
+                headerMenu
+
+                dismissButton
             }
             .padding(.top, DS.Spacing.sm)
             .padding(.bottom, DS.Spacing.md)
@@ -96,12 +107,7 @@ struct TimelineView: View {
         Button {
             withAnimation(DS.Animation.cardExpand) { showStats.toggle() }
         } label: {
-            Image(systemName: showStats ? "clock.arrow.circlepath" : "chart.bar.xaxis")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(showStats ? Color.accentColor : .secondary)
-                .frame(width: 26, height: 26)
-                .background(VisualEffectBackground())
-                .clipShape(Circle())
+            headerPill(showStats ? "See Activity" : "See Stats")
         }
         .buttonStyle(.plain)
         .help(showStats ? "Back to timeline" : "Show stats")
@@ -109,30 +115,64 @@ struct TimelineView: View {
     }
 
     private var headerMenu: some View {
-        Menu {
-            Toggle(
-                appState.isTracking ? "Tracking is ON" : "Turn ON Tracking",
-                isOn: .init(
-                    get: { appState.isTracking },
-                    set: { _ in appState.toggleTracking() }
-                )
-            )
-            Divider()
-            Button("Clear All Data…", role: .destructive) {
-                showClearConfirmation = true
-            }
-            Divider()
-            Button("Quit Trace") {
-                NSApplication.shared.terminate(nil)
-            }
+        Button {
+            showMenu.toggle()
         } label: {
-            Image(systemName: "ellipsis.circle.fill")
-                .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(.secondary)
+            headerPill("Menu")
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
+        .buttonStyle(.plain)
+        .popover(isPresented: $showMenu, arrowEdge: .bottom) {
+            VStack(alignment: .leading, spacing: DS.Spacing.xs) {
+                Toggle(
+                    appState.isTracking ? "Tracking is ON" : "Turn ON Tracking",
+                    isOn: .init(
+                        get: { appState.isTracking },
+                        set: { _ in appState.toggleTracking() }
+                    )
+                )
+                Divider()
+                Button("Clear All Data…", role: .destructive) {
+                    showMenu = false
+                    showClearConfirmation = true
+                }
+                .buttonStyle(.plain)
+                Divider()
+                Button("Quit Trace") {
+                    NSApplication.shared.terminate(nil)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(DS.Spacing.md)
+            .frame(minWidth: 200, alignment: .leading)
+        }
         .help("Trace menu")
+    }
+
+    private var dismissButton: some View {
+        Button {
+            showMenu = false
+            SidebarPanelController.shared.hide()
+        } label: {
+            Image(systemName: "xmark")
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(.secondary)
+                .frame(width: 26, height: 26)
+                .background(VisualEffectBackground())
+                .clipShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .help("Close")
+        .accessibilityLabel("Close")
+    }
+
+    private func headerPill(_ title: String) -> some View {
+        Text(title)
+            .font(.caption.weight(.medium))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, DS.Spacing.sm)
+            .padding(.vertical, 3)
+            .background(VisualEffectBackground())
+            .clipShape(Capsule())
     }
 
     // MARK: - Empty state
@@ -140,7 +180,7 @@ struct TimelineView: View {
     private var emptyState: some View {
         VStack(spacing: 0) {
             ContentUnavailableView {
-                Label("No Activity Yet", systemImage: "clock.arrow.circlepath")
+                Label("No Activity Yet", systemImage: "clock")
             } description: {
                 Text("Trace records what you're working on.\nCheck back shortly.")
             }
@@ -163,7 +203,7 @@ struct TimelineView: View {
                 if showStats {
                     StatsView()
                 } else {
-                    ForEach(dayGroups, id: \.label) { group in
+                    ForEach(pagedDayGroups) { group in
                         if group.label != "Today" {
                             Text(group.label)
                                 .font(.title3.weight(.bold))
@@ -178,6 +218,19 @@ struct TimelineView: View {
                         ForEach(group.sessions) { session in
                             SessionCardView(session: session)
                         }
+                    }
+
+                    if hasMoreSessions {
+                        Button {
+                            loadMore()
+                        } label: {
+                            Text("Show more")
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, DS.Spacing.sm)
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -200,7 +253,19 @@ struct TimelineView: View {
         }
     }
 
-    // MARK: - Day grouping
+    // MARK: - Pagination
+
+    private var totalSessionCount: Int {
+        dayGroups.reduce(0) { $0 + $1.sessions.count }
+    }
+
+    private var hasMoreSessions: Bool {
+        visibleCount < totalSessionCount
+    }
+
+    private func loadMore() {
+        visibleCount += Self.pageSize
+    }
 
     private var dayGroups: [DayGroup] {
         let sorted = appState.sessions.sorted { $0.startTime > $1.startTime }
@@ -213,7 +278,7 @@ struct TimelineView: View {
             let key = dayKey(session.startTime)
             if key != currentKey {
                 if !currentSessions.isEmpty {
-                    groups.append(DayGroup(label: currentLabel, sessions: currentSessions))
+                    groups.append(DayGroup(key: currentKey, label: currentLabel, sessions: currentSessions))
                 }
                 currentKey = key
                 currentLabel = dayLabel(session.startTime)
@@ -223,9 +288,26 @@ struct TimelineView: View {
             }
         }
         if !currentSessions.isEmpty {
-            groups.append(DayGroup(label: currentLabel, sessions: currentSessions))
+            groups.append(DayGroup(key: currentKey, label: currentLabel, sessions: currentSessions))
         }
         return groups
+    }
+
+    private var pagedDayGroups: [DayGroup] {
+        var remaining = visibleCount
+        var result: [DayGroup] = []
+        for group in dayGroups {
+            guard remaining > 0 else { break }
+            if group.sessions.count <= remaining {
+                result.append(group)
+                remaining -= group.sessions.count
+            } else {
+                let sliced = Array(group.sessions.prefix(remaining))
+                result.append(DayGroup(key: group.key, label: group.label, sessions: sliced))
+                remaining = 0
+            }
+        }
+        return result
     }
 
     private func dayKey(_ date: Date) -> String {
@@ -240,7 +322,10 @@ struct TimelineView: View {
     }
 }
 
-private struct DayGroup {
+private struct DayGroup: Identifiable {
+    let key: String
     let label: String
     let sessions: [Session]
+
+    var id: String { key }
 }
