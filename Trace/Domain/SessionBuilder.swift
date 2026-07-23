@@ -18,16 +18,6 @@ enum SessionBuilder {
         "com.apple.TextEdit",
     ]
 
-    private static let browserBundles: Set<String> = [
-        "com.apple.Safari",
-        "com.google.Chrome",
-        "company.thebrowser.Browser",
-        "company.thebrowser.dia",
-        "org.mozilla.firefox",
-        "com.brave.Browser",
-        "com.microsoft.edgemac",
-    ]
-
     private static let sourceFileExtensions: Set<String> = [
         "swift", "m", "mm", "h", "cpp", "c", "rs", "go", "py", "js", "ts",
         "tsx", "jsx", "java", "kt", "rb", "php", "cs", "vue", "svelte",
@@ -136,7 +126,7 @@ enum SessionBuilder {
 
         if isWorkApp(snapshot.appBundle) {
             if let sessionProject, let url = snapshot.documentURL,
-               let pathProject = projectFromFileURL(url) {
+               let pathProject = projectFromURL(url) {
                 return normalizeProjectName(pathProject) == normalizeProjectName(sessionProject)
             }
             return true
@@ -150,11 +140,7 @@ enum SessionBuilder {
     }
 
     private static func isWorkApp(_ bundleId: String) -> Bool {
-        workBundles.contains(bundleId) || terminalBundles.contains(bundleId)
-    }
-
-    private static func isCompanionApp(_ bundleId: String) -> Bool {
-        browserBundles.contains(bundleId)
+        workBundles.contains(bundleId) || BundleRegistry.shared.terminals.contains(bundleId)
     }
 
     private static func contentRelatesToProject(_ snapshot: Snapshot, project: String) -> Bool {
@@ -180,8 +166,7 @@ enum SessionBuilder {
     }
 
     private static func projectsConflict(current: String?, next: String?) -> Bool {
-        guard let next else { return false }
-        guard let current else { return false }
+        guard let next, let current else { return false }
         return normalizeProjectName(current) != normalizeProjectName(next)
     }
 
@@ -197,41 +182,26 @@ enum SessionBuilder {
     }
 
     private static func normalizeProjectName(_ name: String) -> String {
-        if name.hasSuffix(".xcodeproj") {
-            return String(name.dropLast(".xcodeproj".count))
-        }
-        if name.hasSuffix(".xcworkspace") {
-            return String(name.dropLast(".xcworkspace".count))
-        }
+        if name.hasSuffix(".xcodeproj") { return String(name.dropLast(".xcodeproj".count)) }
+        if name.hasSuffix(".xcworkspace") { return String(name.dropLast(".xcworkspace".count)) }
         return name
     }
 
     private static func looksLikeSourceFile(_ name: String) -> Bool {
-        guard let ext = name.split(separator: ".").last?.lowercased(),
-              name.contains(".") else { return false }
+        guard let ext = name.split(separator: ".").last?.lowercased(), name.contains(".") else { return false }
         return sourceFileExtensions.contains(ext)
     }
 
     // MARK: - Project extraction
+    //
+    // Strategy (in priority order):
+    //   1. file:// URL → path-based project name (most reliable)
+    //   2. https://github.com/ URL → repo name
+    //   3. Xcode window title (structured, reliable)
+    //   4. Terminal window title / path
+    //   5. dominantApp fallback (no fragile string splitting for other apps)
 
-    private static let editorSuffixes: Set<String> = [
-        "Cursor", "Visual Studio Code", "Code",
-        "IntelliJ IDEA", "WebStorm", "PyCharm", "CLion", "GoLand",
-        "RubyMine", "PhpStorm", "DataGrip", "Rider", "RustRover",
-        "Android Studio", "Fleet",
-        "Sublime Text",
-        "Nova", "BBEdit", "TextMate", "CotEditor",
-        "VIM", "MacVim",
-    ]
-
-    private static let terminalBundles: Set<String> = [
-        "com.apple.Terminal",
-        "com.googlecode.iterm2",
-        "dev.warp.Warp-Stable",
-        "io.alacritty",
-        "net.kovidgoyal.kitty",
-        "com.mitchellh.ghostty",
-    ]
+    private static let terminalBundles: Set<String> = BundleRegistry.shared.terminals
 
     private static let genericDirs: Set<String> = [
         "users", "home", "developer", "documents", "desktop",
@@ -242,103 +212,48 @@ enum SessionBuilder {
     ]
 
     static func extractProject(from snapshot: Snapshot) -> String? {
-        let isTerminal = terminalBundles.contains(snapshot.appBundle)
-        let isXcode = snapshot.appBundle == xcodeBundle
-
-        if let title = snapshot.windowTitle, !title.isEmpty {
-            if isTerminal {
-                if let project = projectFromTerminalTitle(title) {
-                    return project
-                }
-            } else if isXcode, let project = projectFromXcodeTitle(title, documentURL: snapshot.documentURL) {
-                return project
-            } else if workBundles.contains(snapshot.appBundle) || browserBundles.contains(snapshot.appBundle) {
-                let emParts = title.components(separatedBy: " — ")
-                if emParts.count >= 2, let last = emParts.last, !last.isEmpty {
-                    let trimmed = last.trimmingCharacters(in: .whitespaces)
-                    if !looksLikeSourceFile(trimmed),
-                       trimmed.caseInsensitiveCompare(snapshot.appName) != .orderedSame {
-                        return trimmed
-                    }
-                }
-
-                let hyphenParts = title.components(separatedBy: " - ")
-                if hyphenParts.count >= 3 {
-                    let last = hyphenParts.last!.trimmingCharacters(in: .whitespaces)
-                    if editorSuffixes.contains(last) {
-                        let proj = hyphenParts[hyphenParts.count - 2]
-                            .trimmingCharacters(in: .whitespaces)
-                        if !proj.isEmpty { return proj }
-                    }
-                }
-            }
+        // 1. file:// URL — highest signal
+        if let url = snapshot.documentURL, url.hasPrefix("file://") {
+            if let project = projectFromFileURL(url) { return project }
         }
 
+        // 2. GitHub URL
         if let url = snapshot.documentURL {
-            if url.hasPrefix("file://") {
-                if let project = projectFromFileURL(url) {
-                    return project
-                }
-            }
-            if url.contains("github.com/") {
-                let parts = url.components(separatedBy: "github.com/")
-                if let pathPart = parts.last {
-                    let segments = pathPart.components(separatedBy: "/")
-                        .filter { !$0.isEmpty }
-                    if segments.count >= 2 {
-                        return segments[1].components(separatedBy: "?").first
-                    }
-                }
+            if let project = projectFromGitHubURL(url) { return project }
+        }
+
+        // 3. Xcode window title
+        if snapshot.appBundle == xcodeBundle, let title = snapshot.windowTitle, !title.isEmpty {
+            if let project = projectFromXcodeTitle(title, documentURL: snapshot.documentURL) {
+                return project
             }
         }
 
+        // 4. Terminal title/path
+        if terminalBundles.contains(snapshot.appBundle), let title = snapshot.windowTitle, !title.isEmpty {
+            if let project = projectFromTerminalTitle(title) { return project }
+        }
+
+        // 5. No guess for other apps — dominantApp handles fallback at session level
         return nil
     }
 
-    private static func projectFromXcodeTitle(_ title: String, documentURL: String?) -> String? {
-        let parts = title.components(separatedBy: " — ")
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }
+    // MARK: - URL-based extraction (reliable)
 
-        if parts.count >= 2 {
-            for part in parts {
-                if part.hasSuffix(".xcodeproj") || part.hasSuffix(".xcworkspace") {
-                    return normalizeProjectName(part)
-                }
-            }
-            for part in parts where !looksLikeSourceFile(part) {
-                return part
-            }
-            if let project = documentURL.flatMap(projectFromFileURL) {
-                return project
-            }
-            return parts.first
-        }
-
-        let single = parts.first ?? title.trimmingCharacters(in: .whitespaces)
-        if single.hasSuffix(".xcodeproj") || single.hasSuffix(".xcworkspace") {
-            return normalizeProjectName(single)
-        }
-        return documentURL.flatMap(projectFromFileURL)
+    /// Single entry point for both file:// and https://github.com/ URLs.
+    static func projectFromURL(_ urlString: String) -> String? {
+        if urlString.hasPrefix("file://") { return projectFromFileURL(urlString) }
+        if urlString.contains("github.com/") { return projectFromGitHubURL(urlString) }
+        return nil
     }
 
-    private static func projectFromTerminalTitle(_ title: String) -> String? {
-        for part in title.components(separatedBy: " — ") {
-            let trimmed = part.trimmingCharacters(in: .whitespaces)
-            if let project = projectFromPath(trimmed) {
-                return project
-            }
-        }
-
-        if let colonIdx = title.firstIndex(of: ":") {
-            let after = String(title[title.index(after: colonIdx)...])
-                .trimmingCharacters(in: .whitespaces)
-            if let project = projectFromPath(after) {
-                return project
-            }
-        }
-
-        return projectFromPath(title)
+    private static func projectFromGitHubURL(_ url: String) -> String? {
+        guard url.contains("github.com/") else { return nil }
+        let parts = url.components(separatedBy: "github.com/")
+        guard let pathPart = parts.last else { return nil }
+        let segments = pathPart.components(separatedBy: "/").filter { !$0.isEmpty }
+        guard segments.count >= 2 else { return nil }
+        return segments[1].components(separatedBy: "?").first
     }
 
     private static func projectFromFileURL(_ urlString: String) -> String? {
@@ -363,6 +278,44 @@ enum SessionBuilder {
             }
         }
         return nil
+    }
+
+    // MARK: - Xcode title (structured — reliable)
+
+    private static func projectFromXcodeTitle(_ title: String, documentURL: String?) -> String? {
+        let parts = title.components(separatedBy: " — ")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+
+        if parts.count >= 2 {
+            for part in parts where part.hasSuffix(".xcodeproj") || part.hasSuffix(".xcworkspace") {
+                return normalizeProjectName(part)
+            }
+            for part in parts where !looksLikeSourceFile(part) {
+                return part
+            }
+            if let project = documentURL.flatMap({ projectFromURL($0) }) { return project }
+            return parts.first
+        }
+
+        let single = parts.first ?? title.trimmingCharacters(in: .whitespaces)
+        if single.hasSuffix(".xcodeproj") || single.hasSuffix(".xcworkspace") {
+            return normalizeProjectName(single)
+        }
+        return documentURL.flatMap { projectFromURL($0) }
+    }
+
+    // MARK: - Terminal title (path-based — reliable)
+
+    private static func projectFromTerminalTitle(_ title: String) -> String? {
+        for part in title.components(separatedBy: " — ") {
+            if let p = projectFromPath(part.trimmingCharacters(in: .whitespaces)) { return p }
+        }
+        if let colonIdx = title.firstIndex(of: ":") {
+            let after = String(title[title.index(after: colonIdx)...]).trimmingCharacters(in: .whitespaces)
+            if let p = projectFromPath(after) { return p }
+        }
+        return projectFromPath(title)
     }
 
     // MARK: - Build session
@@ -405,9 +358,7 @@ enum SessionBuilder {
 
     private static func dominantApp(from snapshots: [Snapshot]) -> String {
         var counts: [String: Int] = [:]
-        for snap in snapshots {
-            counts[snap.appName, default: 0] += 1
-        }
+        for snap in snapshots { counts[snap.appName, default: 0] += 1 }
         return counts.max(by: { $0.value < $1.value })?.key ?? "Activity"
     }
 
