@@ -3,6 +3,7 @@ import SwiftUI
 struct TimelineView: View {
     @Environment(AppState.self) private var appState
     @State private var showClearConfirmation = false
+    @State private var showStats = false
 
     var body: some View {
         Group {
@@ -64,6 +65,10 @@ struct TimelineView: View {
                 }
 
                 Spacer()
+
+                if !appState.sessions.isEmpty {
+                    statsToggle
+                }
             }
             .padding(.top, DS.Spacing.sm)
             .padding(.bottom, DS.Spacing.md)
@@ -85,6 +90,22 @@ struct TimelineView: View {
                 .padding(.bottom, DS.Spacing.xs)
             }
         }
+    }
+
+    private var statsToggle: some View {
+        Button {
+            withAnimation(DS.Animation.cardExpand) { showStats.toggle() }
+        } label: {
+            Image(systemName: showStats ? "clock.arrow.circlepath" : "chart.bar.xaxis")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(showStats ? Color.accentColor : .secondary)
+                .frame(width: 26, height: 26)
+                .background(VisualEffectBackground())
+                .clipShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .help(showStats ? "Back to timeline" : "Show stats")
+        .accessibilityLabel(showStats ? "Back to timeline" : "Show stats")
     }
 
     private var headerMenu: some View {
@@ -139,20 +160,24 @@ struct TimelineView: View {
             LazyVStack(alignment: .leading, spacing: DS.Spacing.sm) {
                 header
 
-                ForEach(dayGroups, id: \.label) { group in
-                    if group.label != "Today" {
-                        Text(group.label)
-                            .font(.title3.weight(.bold))
-                            .shadow(
-                                color: .black.opacity(DS.Opacity.shadowText),
-                                radius: DS.Shadow.textRadius,
-                                y: DS.Shadow.textY
-                            )
-                            .padding(.top, DS.Spacing.md)
-                    }
+                if showStats {
+                    StatsView()
+                } else {
+                    ForEach(dayGroups, id: \.label) { group in
+                        if group.label != "Today" {
+                            Text(group.label)
+                                .font(.title3.weight(.bold))
+                                .shadow(
+                                    color: .black.opacity(DS.Opacity.shadowText),
+                                    radius: DS.Shadow.textRadius,
+                                    y: DS.Shadow.textY
+                                )
+                                .padding(.top, DS.Spacing.md)
+                        }
 
-                    ForEach(group.sessions) { session in
-                        SessionCardView(session: session)
+                        ForEach(group.sessions) { session in
+                            SessionCardView(session: session)
+                        }
                     }
                 }
             }
