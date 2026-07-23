@@ -32,6 +32,23 @@ struct SessionApp: Sendable, Identifiable {
     let windowTitles: [String]
     let urls: [String]
     let snapshotCount: Int
+    let activeSeconds: Int
+
+    init(
+        appName: String,
+        bundleId: String,
+        windowTitles: [String],
+        urls: [String],
+        snapshotCount: Int,
+        activeSeconds: Int = 0
+    ) {
+        self.appName = appName
+        self.bundleId = bundleId
+        self.windowTitles = windowTitles
+        self.urls = urls
+        self.snapshotCount = snapshotCount
+        self.activeSeconds = activeSeconds
+    }
 }
 
 struct CapturedContext: Sendable {

@@ -4,8 +4,6 @@ struct SessionCardView: View {
     let session: Session
     @Environment(AppState.self) private var appState
     @State private var isExpanded = false
-    @State private var isRestoring = false
-    @State private var restoreMessage: String?
     @State private var isHovering = false
 
     private var detailApps: [SessionApp] {
@@ -18,11 +16,15 @@ struct SessionCardView: View {
     }
 
     private var primaryApp: SessionApp? {
-        collapsedApps.first ?? session.apps.first
+        SessionDisplay.featuredApp(for: session) ?? collapsedApps.first ?? session.apps.first
     }
 
     private var secondaryApps: [SessionApp] {
-        collapsedApps.count > 1 ? Array(collapsedApps.dropFirst()) : []
+        guard let primary = primaryApp else {
+            return collapsedApps.count > 1 ? Array(collapsedApps.dropFirst()) : []
+        }
+        let others = collapsedApps.filter { $0.bundleId != primary.bundleId }
+        return others
     }
 
     private var displaySummary: String? {
@@ -37,9 +39,8 @@ struct SessionCardView: View {
         session.apps.count <= 1
     }
 
-    private var listApps: [SessionApp] {
-        if !detailApps.isEmpty { return detailApps }
-        return SessionAppDisplay.rankedApps(session.apps)
+    private var expandedApps: [SessionApp] {
+        SessionDisplay.expandedApps(for: session)
     }
 
     private var hasRichDetail: Bool {
@@ -47,7 +48,7 @@ struct SessionCardView: View {
     }
 
     private var showAppList: Bool {
-        !(isSingleApp && !hasRichDetail) && !listApps.isEmpty
+        !expandedApps.isEmpty
     }
 
     var body: some View {
@@ -89,15 +90,9 @@ struct SessionCardView: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top, spacing: DS.Spacing.lg) {
                 if let app = primaryApp {
-                    AppIconBadge(app: app, size: DS.IconSize.primary)
-                        .padding(.top, 1)
-                }
-
-                VStack(alignment: .leading, spacing: DS.Spacing.xxs) {
-                    HStack(alignment: .center, spacing: DS.Spacing.xs) {
-                        Text(sessionTitle)
-                            .font(.body.weight(.bold))
-                            .lineLimit(1)
+                    VStack(spacing: DS.Spacing.xxs) {
+                        AppIconBadge(app: app, size: DS.IconSize.primary)
+                            .padding(.top, 1)
 
                         if isHovering {
                             Button {
@@ -106,12 +101,21 @@ struct SessionCardView: View {
                                 }
                             } label: {
                                 Text("Hide")
-                                    .font(.caption.weight(.medium))
+                                    .font(.caption2.weight(.medium))
                                     .foregroundStyle(.secondary)
                             }
                             .buttonStyle(.plain)
                             .transition(.opacity)
                         }
+                    }
+                    .frame(width: DS.IconSize.primary)
+                }
+
+                VStack(alignment: .leading, spacing: DS.Spacing.xxs) {
+                    HStack(alignment: .center, spacing: DS.Spacing.xs) {
+                        Text(sessionTitle)
+                            .font(.body.weight(.bold))
+                            .lineLimit(1)
 
                         Spacer()
                         Text(SessionDisplay.relativeTimeLabel(for: session))
@@ -160,7 +164,6 @@ struct SessionCardView: View {
                 guard !session.apps.isEmpty else { return }
                 withAnimation(DS.Animation.cardExpand) {
                     isExpanded.toggle()
-                    if !isExpanded { restoreMessage = nil }
                 }
             }
 
@@ -169,45 +172,24 @@ struct SessionCardView: View {
                     .padding(.horizontal, DS.Spacing.xl)
 
                 VStack(alignment: .leading, spacing: DS.Spacing.md) {
-                    if let restoreMessage {
-                        Text(restoreMessage)
-                            .font(.caption2)
-                            .foregroundStyle(restoreMessage.contains("Couldn't") ? .orange : .secondary)
-                    }
-
                     if showAppList {
-                        Text("Apps in this session")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(Color.white.opacity(DS.Opacity.sectionLabel))
+                        if expandedApps.count > 1 {
+                            Text("Apps in this session")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(Color.white.opacity(DS.Opacity.sectionLabel))
+                        }
 
                         VStack(spacing: 0) {
-                            ForEach(listApps) { app in
+                            ForEach(expandedApps) { app in
                                 AppDetailRow(
                                     app: app,
                                     session: session,
                                     showOpenAction: true
                                 )
-                                if app.id != listApps.last?.id {
+                                if app.id != expandedApps.last?.id {
                                     Divider().padding(.leading, 36)
                                 }
                             }
-                        }
-                    } else {
-                        HStack {
-                            Spacer()
-                            Button {
-                                Task { await restoreSession() }
-                            } label: {
-                                if isRestoring {
-                                    ProgressView().controlSize(.mini)
-                                } else {
-                                    Image(systemName: "arrow.up.right")
-                                        .font(.system(size: DS.IconSize.glyphMd, weight: .medium))
-                                }
-                            }
-                            .foregroundStyle(.secondary)
-                            .buttonStyle(.plain)
-                            .disabled(isRestoring)
                         }
                     }
                 }
@@ -229,14 +211,6 @@ struct SessionCardView: View {
 
     private var isHidden: Bool {
         appState.isSessionHidden(session)
-    }
-
-    private func restoreSession() async {
-        isRestoring = true
-        restoreMessage = nil
-        let result = await appState.restoreSession(session)
-        isRestoring = false
-        restoreMessage = RestoreFeedback.message(for: result)
     }
 }
 
@@ -288,7 +262,7 @@ struct AppDetailRow: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: DS.Spacing.xs) {
-                    Text(app.appName)
+                    Text(SessionAppDisplay.displayName(for: app))
                         .font(.callout.weight(.medium))
                     if let timeShare {
                         Text(timeShare)

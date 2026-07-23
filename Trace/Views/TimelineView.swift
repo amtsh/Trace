@@ -50,9 +50,10 @@ struct TimelineView: View {
                         radius: DS.Shadow.textRadius,
                         y: DS.Shadow.textY
                     )
-                if appState.isTracking {
-                    PollCountdownRing(lastPoll: appState.lastPollDate)
-                } else {
+
+                headerMenu
+
+                if !appState.isTracking {
                     Text("Paused")
                         .font(.caption2.weight(.medium))
                         .foregroundStyle(.orange)
@@ -61,35 +62,8 @@ struct TimelineView: View {
                         .background(VisualEffectBackground())
                         .clipShape(Capsule())
                 }
+
                 Spacer()
-                Menu {
-                    Toggle(
-                        appState.isTracking ? "Tracking is ON" : "Turn ON Tracking",
-                        isOn: .init(
-                            get: { appState.isTracking },
-                            set: { _ in appState.toggleTracking() }
-                        )
-                    )
-                    Divider()
-                    Button("Clear All Data…", role: .destructive) {
-                        showClearConfirmation = true
-                    }
-                    Divider()
-                    Button("Quit Trace") {
-                        NSApplication.shared.terminate(nil)
-                    }
-                } label: {
-                    Text("Menu")
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.white.opacity(DS.Opacity.menuLabel))
-                        .padding(.horizontal, DS.Spacing.xl)
-                        .padding(.vertical, 7)
-                        .background(Color.black.opacity(DS.Opacity.menuBg))
-                        .clipShape(Capsule())
-                }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .fixedSize()
             }
             .padding(.top, DS.Spacing.sm)
             .padding(.bottom, DS.Spacing.md)
@@ -111,6 +85,33 @@ struct TimelineView: View {
                 .padding(.bottom, DS.Spacing.xs)
             }
         }
+    }
+
+    private var headerMenu: some View {
+        Menu {
+            Toggle(
+                appState.isTracking ? "Tracking is ON" : "Turn ON Tracking",
+                isOn: .init(
+                    get: { appState.isTracking },
+                    set: { _ in appState.toggleTracking() }
+                )
+            )
+            Divider()
+            Button("Clear All Data…", role: .destructive) {
+                showClearConfirmation = true
+            }
+            Divider()
+            Button("Quit Trace") {
+                NSApplication.shared.terminate(nil)
+            }
+        } label: {
+            Image(systemName: "ellipsis.circle.fill")
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(.secondary)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .help("Trace menu")
     }
 
     // MARK: - Empty state
@@ -204,28 +205,4 @@ struct TimelineView: View {
 private struct DayGroup {
     let label: String
     let sessions: [Session]
-}
-
-private struct PollCountdownRing: View {
-    let lastPoll: Date
-
-    var body: some View {
-        SwiftUI.TimelineView(.periodic(from: .now, by: 1)) { context in
-            let elapsed = context.date.timeIntervalSince(lastPoll)
-            let remaining = max(0, 1.0 - elapsed / DS.Poll.intervalSeconds)
-
-            Circle()
-                .trim(from: 0, to: remaining)
-                .stroke(
-                    style: StrokeStyle(
-                        lineWidth: DS.Poll.ringLineWidth,
-                        lineCap: .round
-                    )
-                )
-                .foregroundStyle(.tertiary)
-                .rotationEffect(.degrees(-90))
-                .frame(width: DS.IconSize.ring, height: DS.IconSize.ring)
-                .animation(.linear(duration: 1), value: remaining)
-        }
-    }
 }

@@ -62,6 +62,7 @@ enum SessionBuilder {
 
         func absorbRelated(_ snap: Snapshot) {
             if isSubstantialDetour(endingAt: snap.timestamp) {
+                flushRelated()
                 let project = unrelatedPending.compactMap { extractProject(from: $0) }.first
                 groups.append((unrelatedPending, project))
             } else {
@@ -318,20 +319,40 @@ enum SessionBuilder {
     private static func makeSession(from snapshots: [Snapshot], project: String?) -> Session {
         let start = snapshots.first!.timestamp
         let end = snapshots.last!.timestamp
-        let seconds = max(Int(end.timeIntervalSince(start)), 1)
-        let activity = resolveActivity(from: snapshots, project: project)
+        let activeSeconds = computeActiveSeconds(from: snapshots)
+        let seconds = max(activeSeconds.values.reduce(0, +), 1)
+        let apps = buildApps(from: snapshots, activeSeconds: activeSeconds)
+        let activity = resolveActivity(from: snapshots, project: project, apps: apps)
 
         return Session(
             id: "session-\(Int(start.timeIntervalSince1970))",
             startTime: start,
             endTime: end,
             durationSeconds: seconds,
-            apps: buildApps(from: snapshots),
+            apps: apps,
             activity: activity
         )
     }
 
-    private static func resolveActivity(from snapshots: [Snapshot], project: String?) -> String {
+    private static func computeActiveSeconds(from snapshots: [Snapshot]) -> [String: Int] {
+        guard !snapshots.isEmpty else { return [:] }
+        var result: [String: Int] = [:]
+        let maxGap = 90
+
+        for index in snapshots.indices {
+            let snap = snapshots[index]
+            let delta: Int
+            if index + 1 < snapshots.count {
+                delta = min(max(Int(snapshots[index + 1].timestamp.timeIntervalSince(snap.timestamp)), 1), maxGap)
+            } else {
+                delta = 30
+            }
+            result[snap.appBundle, default: 0] += delta
+        }
+        return result
+    }
+
+    private static func resolveActivity(from snapshots: [Snapshot], project: String?, apps: [SessionApp]) -> String {
         var best: (priority: Int, name: String)?
 
         if let project {
@@ -348,6 +369,9 @@ enum SessionBuilder {
         }
 
         if let best { return best.name }
+        if let contextual = SessionAppDisplay.bestContextTitle(in: apps) {
+            return contextual
+        }
         return dominantApp(from: snapshots)
     }
 
@@ -357,7 +381,7 @@ enum SessionBuilder {
         return counts.max(by: { $0.value < $1.value })?.key ?? "Activity"
     }
 
-    private static func buildApps(from snapshots: [Snapshot]) -> [SessionApp] {
+    private static func buildApps(from snapshots: [Snapshot], activeSeconds: [String: Int]) -> [SessionApp] {
         var order: [String] = []
         var names: [String: String] = [:]
         var titles: [String: Set<String>] = [:]
@@ -386,7 +410,8 @@ enum SessionBuilder {
                 bundleId: b,
                 windowTitles: Array(titles[b]!),
                 urls: Array(urls[b]!),
-                snapshotCount: counts[b] ?? 1
+                snapshotCount: counts[b] ?? 1,
+                activeSeconds: activeSeconds[b] ?? 0
             )
         }
         return SessionAppDisplay.rankedApps(apps)

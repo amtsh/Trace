@@ -36,8 +36,39 @@ enum SessionAppDisplay {
         "com.notion.id": ["Notion"],
     ]
 
+    private static let appTitleSuffixes: [String: [String]] = [
+        "com.github.GitHubClient": ["GitHub Desktop"],
+    ]
+
     static func isChatApp(_ bundleId: String) -> Bool {
         chatAppSuffixes[bundleId] != nil || bundleId.hasPrefix("ai.perplexity")
+    }
+
+    private static let displayNames: [String: String] = [
+        "company.thebrowser.dia": "Arc",
+    ]
+
+    static func displayName(for app: SessionApp) -> String {
+        displayNames[app.bundleId] ?? app.appName
+    }
+
+    static func contextScore(for app: SessionApp) -> Int {
+        let lines = displayLines(for: app)
+        var score = lines.count * 10
+        if bestDisplayLine(for: app) != nil { score += 5 }
+        return score
+    }
+
+    static func appWithBestContext(in apps: [SessionApp]) -> SessionApp? {
+        apps.max { contextScore(for: $0) < contextScore(for: $1) }
+    }
+
+    static func bestContextTitle(in apps: [SessionApp]) -> String? {
+        guard let app = appWithBestContext(in: apps),
+              let line = bestDisplayLine(for: app),
+              line.text.lowercased() != app.appName.lowercased(),
+              line.text.lowercased() != displayName(for: app).lowercased() else { return nil }
+        return line.text
     }
 
     private static func chatSuffixes(for bundleId: String) -> [String]? {
@@ -133,14 +164,13 @@ enum SessionAppDisplay {
         let filteredURLs = app.urls.filter { !isNoiseURL($0) }
 
         if app.bundleId == xcodeBundle {
-            if let project = inferredProject(for: app) {
+            appendTitleLines(
+                filteredTitles.filter { looksLikeFile($0) },
+                to: &lines,
+                seen: &seen
+            )
+            if lines.isEmpty, let project = inferredProject(for: app) {
                 lines.append(Line(id: "xcode-project-\(project)", text: project, isPath: false))
-            } else {
-                appendTitleLines(
-                    filteredTitles.filter { looksLikeFile($0) },
-                    to: &lines,
-                    seen: &seen
-                )
             }
         } else if isEditor(app.bundleId) {
             for url in filteredURLs.sorted(by: pathSortPriority) {
@@ -258,6 +288,18 @@ enum SessionAppDisplay {
                 }
                 if suffixes.contains(where: { parts.first?.caseInsensitiveCompare($0) == .orderedSame }) {
                     return parts.dropFirst().joined(separator: sep.trimmingCharacters(in: .whitespaces))
+                }
+            }
+        }
+
+        if let suffixes = appTitleSuffixes[bundleId] {
+            for sep in [" — ", " – ", " - "] {
+                let parts = trimmed.components(separatedBy: sep)
+                    .map { $0.trimmingCharacters(in: .whitespaces) }
+                    .filter { !$0.isEmpty }
+                guard parts.count >= 2 else { continue }
+                if suffixes.contains(where: { parts.last?.caseInsensitiveCompare($0) == .orderedSame }) {
+                    return parts.dropLast().joined(separator: " ")
                 }
             }
         }

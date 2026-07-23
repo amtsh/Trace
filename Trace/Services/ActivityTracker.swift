@@ -157,11 +157,27 @@ final class ActivityTracker {
             }
 
             if !isMeaningfulTitle(windowTitle, appName: appName) {
-                windowTitle = sanitized(webContentTitle(axApp))
+                windowTitle = sanitized(webContentTitle(axApp)) ?? sanitized(webContentTitleFromAllWindows(axApp))
             }
 
             if documentURL == nil, Self.isChatBundle(bundleId) {
-                documentURL = sanitized(webContentURL(axApp))
+                documentURL = sanitized(webContentURL(axApp)) ?? sanitized(webContentURLFromAllWindows(axApp))
+            }
+
+            if !isMeaningfulTitle(windowTitle, appName: appName),
+               let url = documentURL,
+               let derived = titleFromChatURL(url) {
+                windowTitle = derived
+            }
+
+            if bundleId == Self.githubDesktopBundle {
+                if documentURL == nil {
+                    documentURL = sanitized(githubDesktopRepositoryPath(axApp))
+                }
+                if !isMeaningfulTitle(windowTitle, appName: appName) {
+                    windowTitle = sanitized(githubDesktopContext(axApp, appName: appName))
+                        ?? titleFromRepositoryPath(documentURL)
+                }
             }
         }
 
@@ -208,6 +224,137 @@ final class ActivityTracker {
         chatBundles.contains(bundleId) || bundleId.hasPrefix("ai.perplexity")
     }
 
+    private static let githubDesktopBundle = "com.github.GitHubClient"
+
+    private func githubDesktopContext(_ axApp: AXUIElement, appName: String) -> String? {
+        var windowsRef: AnyObject?
+        guard AXUIElementCopyAttributeValue(
+            axApp, kAXWindowsAttribute as CFString, &windowsRef
+        ) == .success, let windows = windowsRef as? [AXUIElement] else { return nil }
+
+        var candidates: [String] = []
+        for window in windows.prefix(2) {
+            collectAccessibilityTexts(from: window, depth: 6, appName: appName, into: &candidates)
+        }
+
+        return pickGitHubDesktopCandidate(from: candidates)
+    }
+
+    private func githubDesktopRepositoryPath(_ axApp: AXUIElement) -> String? {
+        var windowsRef: AnyObject?
+        guard AXUIElementCopyAttributeValue(
+            axApp, kAXWindowsAttribute as CFString, &windowsRef
+        ) == .success, let windows = windowsRef as? [AXUIElement] else { return nil }
+
+        for window in windows.prefix(2) {
+            if let path = findRepositoryPath(in: window, depth: 6) {
+                return path
+            }
+        }
+        return nil
+    }
+
+    private func findRepositoryPath(in element: AXUIElement, depth: Int) -> String? {
+        guard depth > 0 else { return nil }
+
+        if let url = sanitized(axStringAttribute(element, "AXURL")),
+           url.hasPrefix("file://") {
+            return url
+        }
+
+        var childrenRef: AnyObject?
+        guard AXUIElementCopyAttributeValue(
+            element, kAXChildrenAttribute as CFString, &childrenRef
+        ) == .success, let children = childrenRef as? [AXUIElement] else { return nil }
+
+        for child in children.prefix(10) {
+            if let path = findRepositoryPath(in: child, depth: depth - 1) {
+                return path
+            }
+        }
+        return nil
+    }
+
+    private func collectAccessibilityTexts(
+        from element: AXUIElement,
+        depth: Int,
+        appName: String,
+        into candidates: inout [String]
+    ) {
+        guard depth > 0 else { return }
+
+        if let title = sanitized(axStringAttribute(element, kAXTitleAttribute as String)),
+           isMeaningfulTitle(title, appName: appName) {
+            candidates.append(title)
+        }
+
+        if let value = sanitized(axStringAttribute(element, kAXValueAttribute as String)),
+           isMeaningfulTitle(value, appName: appName) {
+            candidates.append(value)
+        }
+
+        if let description = sanitized(axStringAttribute(element, kAXDescriptionAttribute as String)),
+           isMeaningfulTitle(description, appName: appName) {
+            candidates.append(description)
+        }
+
+        var roleRef: AnyObject?
+        let role = (AXUIElementCopyAttributeValue(
+            element, kAXRoleAttribute as CFString, &roleRef
+        ) == .success) ? roleRef as? String : nil
+
+        if role == "AXStaticText",
+           let value = sanitized(axStringAttribute(element, kAXValueAttribute as String)),
+           isMeaningfulTitle(value, appName: appName) {
+            candidates.append(value)
+        }
+
+        var childrenRef: AnyObject?
+        guard AXUIElementCopyAttributeValue(
+            element, kAXChildrenAttribute as CFString, &childrenRef
+        ) == .success, let children = childrenRef as? [AXUIElement] else { return }
+
+        for child in children.prefix(10) {
+            collectAccessibilityTexts(from: child, depth: depth - 1, appName: appName, into: &candidates)
+        }
+    }
+
+    private func axStringAttribute(_ element: AXUIElement, _ attr: String) -> String? {
+        var value: AnyObject?
+        guard AXUIElementCopyAttributeValue(element, attr as CFString, &value) == .success else { return nil }
+        return value as? String
+    }
+
+    private func pickGitHubDesktopCandidate(from candidates: [String]) -> String? {
+        let blocked = [
+            "changes", "history", "repository", "branch", "fetch origin", "pull origin",
+            "push origin", "open in", "show in finder", "view on github", "current branch",
+            "publish repository", "create pull request", "stash all changes",
+        ]
+
+        let scored = candidates.compactMap { raw -> (String, Int)? in
+            let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard text.count >= 2, text.count <= 64 else { return nil }
+            let lower = text.lowercased()
+            if blocked.contains(where: { lower == $0 || lower.hasPrefix($0) }) { return nil }
+            if lower == "github desktop" { return nil }
+
+            var score = 0
+            if text.contains("/") { score += 1 }
+            if text.contains(" — ") || text.contains(" - ") { score += 4 }
+            if text.split(separator: " ").count == 1 { score += 3 }
+            if text.first?.isLowercase == false { score += 1 }
+            return (text, score)
+        }
+
+        return scored.max(by: { $0.1 < $1.1 })?.0
+    }
+
+    private func titleFromRepositoryPath(_ urlString: String?) -> String? {
+        guard let urlString, urlString.hasPrefix("file://") else { return nil }
+        return SessionBuilder.projectFromFileURL(urlString)
+    }
+
     private func axWindowAttribute(_ app: AXUIElement, _ attr: String) -> String? {
         var window: AnyObject?
         guard AXUIElementCopyAttributeValue(
@@ -245,7 +392,7 @@ final class ActivityTracker {
         guard AXUIElementCopyAttributeValue(
             axApp, kAXFocusedWindowAttribute as CFString, &windowRef
         ) == .success else { return nil }
-        return findWebAreaTitle(windowRef as! AXUIElement, depth: 5)
+        return findWebAreaTitle(windowRef as! AXUIElement, depth: 8)
     }
 
     private func webContentURL(_ axApp: AXUIElement) -> String? {
@@ -253,7 +400,59 @@ final class ActivityTracker {
         guard AXUIElementCopyAttributeValue(
             axApp, kAXFocusedWindowAttribute as CFString, &windowRef
         ) == .success else { return nil }
-        return findWebAreaURL(windowRef as! AXUIElement, depth: 6)
+        return findWebAreaURL(windowRef as! AXUIElement, depth: 8)
+    }
+
+    private func webContentTitleFromAllWindows(_ axApp: AXUIElement) -> String? {
+        var windowsRef: AnyObject?
+        guard AXUIElementCopyAttributeValue(
+            axApp, kAXWindowsAttribute as CFString, &windowsRef
+        ) == .success, let windows = windowsRef as? [AXUIElement] else { return nil }
+
+        for window in windows.prefix(4) {
+            if let title = findWebAreaTitle(window, depth: 8) {
+                return title
+            }
+        }
+        return nil
+    }
+
+    private func webContentURLFromAllWindows(_ axApp: AXUIElement) -> String? {
+        var windowsRef: AnyObject?
+        guard AXUIElementCopyAttributeValue(
+            axApp, kAXWindowsAttribute as CFString, &windowsRef
+        ) == .success, let windows = windowsRef as? [AXUIElement] else { return nil }
+
+        for window in windows.prefix(4) {
+            if let url = findWebAreaURL(window, depth: 8) {
+                return url
+            }
+        }
+        return nil
+    }
+
+    private func titleFromChatURL(_ urlString: String) -> String? {
+        guard let url = URL(string: urlString), let host = url.host?.lowercased() else { return nil }
+
+        if host.contains("perplexity") {
+            let parts = url.path.split(separator: "/").map(String.init)
+            if let slug = parts.last, !slug.isEmpty, parts.contains(where: { $0 == "search" || $0 == "thread" }) {
+                return humanizeURLSlug(slug)
+            }
+        }
+
+        if host.contains("claude.ai") || host.contains("chatgpt.com") || host.contains("openai.com") {
+            return nil
+        }
+
+        return nil
+    }
+
+    private func humanizeURLSlug(_ slug: String) -> String {
+        slug
+            .replacingOccurrences(of: "-", with: " ")
+            .replacingOccurrences(of: "_", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func findWebAreaURL(_ element: AXUIElement, depth: Int) -> String? {

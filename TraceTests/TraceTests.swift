@@ -125,10 +125,11 @@ struct SessionBuilderTests {
 
         let sessions = SessionBuilder.buildSessions(from: snapshots)
 
-        #expect(sessions.count == 2)
+        #expect(sessions.count == 3)
         #expect(sessions[0].activity == "Trace")
         #expect(sessions[0].apps.contains { $0.appName == "Xcode" })
         #expect(sessions[1].apps.contains { $0.appName == "Google Chrome" })
+        #expect(sessions[2].activity == "Trace")
     }
 
     @Test func keepsSustainedAssistantChatInWorkSession() {
@@ -183,9 +184,10 @@ struct SessionBuilderTests {
 
         let sessions = SessionBuilder.buildSessions(from: snapshots)
 
-        #expect(sessions.count == 2)
+        #expect(sessions.count == 3)
         #expect(sessions[0].activity == "Trace")
         #expect(sessions[1].apps.contains { $0.appName == "Weather" || $0.appName == "Stocks" })
+        #expect(sessions[2].activity == "Trace")
     }
 
     @Test func keepsXcodeSettingsPanesInWorkSession() {
@@ -226,6 +228,32 @@ struct SessionBuilderTests {
         #expect(sessions[0].apps.contains { $0.appName == "Weather" })
     }
 
+    @Test func splitsDetourWithoutSpanningGapInWorkSession() {
+        let base = Date(timeIntervalSince1970: 1_700_000_000)
+        let snapshots = [
+            snapshot(id: 1, at: base, title: "Trace — TraceApp.swift",
+                     url: "file:///Users/dev/Trace/Trace/TraceApp.swift"),
+            snapshot(id: 2, at: base.addingTimeInterval(600), title: "Trace — TimelineView.swift",
+                     url: "file:///Users/dev/Trace/Trace/Views/TimelineView.swift"),
+            snapshot(id: 3, at: base.addingTimeInterval(660), title: nil,
+                     bundle: "ai.perplexity.macv3", appName: "Perplexity"),
+            snapshot(id: 4, at: base.addingTimeInterval(720), title: "scrambled eggs in rice cooker",
+                     bundle: "company.thebrowser.dia", appName: "Dia"),
+            snapshot(id: 5, at: base.addingTimeInterval(780), title: nil,
+                     bundle: "ai.perplexity.macv3", appName: "Perplexity"),
+            snapshot(id: 6, at: base.addingTimeInterval(1020), title: "Trace — SessionCardView.swift",
+                     url: "file:///Users/dev/Trace/Trace/Views/SessionCardView.swift"),
+        ]
+
+        let sessions = SessionBuilder.buildSessions(from: snapshots)
+
+        #expect(sessions.count == 3)
+        #expect(sessions[0].activity == "Trace")
+        #expect(sessions[1].activity == "scrambled eggs in rice cooker")
+        #expect(sessions[2].activity == "Trace")
+        #expect(sessions[0].durationSeconds < sessions[2].durationSeconds)
+    }
+
     @Test func ignoresTransientUnrelatedGlance() {
         let base = Date(timeIntervalSince1970: 1_700_000_000)
         let snapshots = [
@@ -255,11 +283,15 @@ struct SessionDisplayTests {
                 id: "s",
                 startTime: end.addingTimeInterval(-120),
                 endTime: end,
-                durationMinutes: 2,
+                durationSeconds: 120,
                 apps: [],
                 activity: "Trace"
             )
         }
+
+        let justNow = now.addingTimeInterval(-15)
+        let justNowLabel = SessionDisplay.relativeTimeLabel(for: session(endingAt: justNow), now: now)
+        #expect(justNowLabel == justNow.formatted(Date.FormatStyle().hour().minute()))
 
         let twentyThreeMinAgo = calendar.date(byAdding: .minute, value: -23, to: now)!
         #expect(SessionDisplay.relativeTimeLabel(for: session(endingAt: twentyThreeMinAgo), now: now) == "23m ago")
@@ -279,7 +311,7 @@ struct SessionDisplayTests {
             id: "s2",
             startTime: start,
             endTime: start.addingTimeInterval(150),
-            durationMinutes: 2,
+            durationSeconds: 120,
             apps: [],
             activity: "Trace"
         )
@@ -294,7 +326,7 @@ struct SessionDisplayTests {
             id: "s2",
             startTime: start,
             endTime: start.addingTimeInterval(150),
-            durationMinutes: 2,
+            durationSeconds: 120,
             apps: [],
             activity: "Trace"
         )
@@ -310,7 +342,7 @@ struct SessionDisplayTests {
             id: "s1",
             startTime: start,
             endTime: start.addingTimeInterval(45),
-            durationMinutes: 1,
+            durationSeconds: 45,
             apps: [],
             activity: "Trace"
         )
@@ -324,7 +356,7 @@ struct SessionDisplayTests {
             id: "s2",
             startTime: start,
             endTime: start.addingTimeInterval(150),
-            durationMinutes: 2,
+            durationSeconds: 120,
             apps: [],
             activity: "Trace"
         )
@@ -343,7 +375,7 @@ struct SessionDisplayTests {
             id: "s3",
             startTime: start,
             endTime: start.addingTimeInterval(29),
-            durationMinutes: 1,
+            durationSeconds: 60,
             apps: apps,
             activity: "Cursor"
         )
@@ -354,14 +386,14 @@ struct SessionDisplayTests {
     @Test func showsPerAppTimeForLongSessions() {
         let start = Date(timeIntervalSince1970: 1_700_000_000)
         let apps = [
-            SessionApp(appName: "Cursor", bundleId: "a", windowTitles: [], urls: [], snapshotCount: 8),
-            SessionApp(appName: "Claude", bundleId: "b", windowTitles: [], urls: [], snapshotCount: 2),
+            SessionApp(appName: "Cursor", bundleId: "a", windowTitles: [], urls: [], snapshotCount: 8, activeSeconds: 288),
+            SessionApp(appName: "Claude", bundleId: "b", windowTitles: [], urls: [], snapshotCount: 2, activeSeconds: 72),
         ]
         let session = Session(
             id: "s4",
             startTime: start,
             endTime: start.addingTimeInterval(360),
-            durationMinutes: 6,
+            durationSeconds: 360,
             apps: apps,
             activity: "Cursor"
         )
@@ -409,7 +441,7 @@ struct SessionDisplayTests {
             id: "s1",
             startTime: Date(timeIntervalSince1970: 1_700_000_000),
             endTime: Date(timeIntervalSince1970: 1_700_000_300),
-            durationMinutes: 5,
+            durationSeconds: 300,
             apps: [cursor, claude],
             activity: "Cursor"
         )
@@ -417,7 +449,6 @@ struct SessionDisplayTests {
         #expect(SessionDisplay.sessionTitle(for: session) == "Trace")
         let context = SessionDisplay.builtInContext(for: session)
         #expect(context?.contains("SessionCardView.swift") == true)
-        #expect(context?.contains("Claude:") == true)
     }
 
     @Test func infersProjectFromCursorTitle() {
@@ -472,7 +503,7 @@ struct SummaryPromptTests {
             )
         }
         let prompt = SummaryPrompt.build(apps: apps, durationMinutes: 5, budget: .standard)
-        #expect(prompt.contains("max 10 words"))
+        #expect(prompt.contains("5–10 words"))
         #expect(prompt.contains("+ 2 more apps"))
         #expect(!prompt.contains("App4"))
     }
@@ -587,6 +618,116 @@ struct SessionAppDisplayTests {
             urls: ["https://claude.ai/chat/123e4567-e89b-12d3-a456-426614174000"]
         )
         #expect(!SessionAppDisplay.displayLines(for: untitled).isEmpty)
+    }
+
+    @Test func keepsSoleProjectAppInExpandedList() {
+        let xcode = SessionApp(
+            appName: "Xcode",
+            bundleId: "com.apple.dt.Xcode",
+            windowTitles: ["Trace — TimelineView.swift"],
+            urls: ["file:///Users/dev/Trace/Trace/Views/TimelineView.swift"],
+            snapshotCount: 8,
+            activeSeconds: 240
+        )
+        let session = Session(
+            id: "trace",
+            startTime: Date(),
+            endTime: Date().addingTimeInterval(240),
+            durationSeconds: 240,
+            apps: [xcode],
+            activity: "Trace"
+        )
+
+        let expanded = SessionDisplay.expandedApps(for: session)
+        #expect(expanded.count == 1)
+        #expect(expanded[0].appName == "Xcode")
+        #expect(SessionDisplay.shouldShowAppInList(xcode, session: session))
+    }
+
+    @Test func showsProjectAppAlongsideSecondaryApps() {
+        let xcode = SessionApp(
+            appName: "Xcode",
+            bundleId: "com.apple.dt.Xcode",
+            windowTitles: ["Trace — TimelineView.swift"],
+            urls: ["file:///Users/dev/Trace/Trace/Views/TimelineView.swift"],
+            snapshotCount: 8,
+            activeSeconds: 120
+        )
+        let cursor = SessionApp(
+            appName: "Cursor",
+            bundleId: "com.todesktop.230313mzl4w4u92",
+            windowTitles: ["Cursor Agents"],
+            urls: [],
+            snapshotCount: 2,
+            activeSeconds: 60
+        )
+        let session = Session(
+            id: "trace-mixed",
+            startTime: Date(),
+            endTime: Date().addingTimeInterval(180),
+            durationSeconds: 180,
+            apps: [xcode, cursor],
+            activity: "Trace"
+        )
+
+        let expanded = SessionDisplay.expandedApps(for: session)
+        #expect(expanded.contains(where: { $0.appName == "Xcode" }))
+        #expect(expanded.contains(where: { $0.appName == "Cursor" }))
+    }
+
+    @Test func usesContextualTitleForDetourSession() {
+        let dia = SessionApp(
+            appName: "Dia",
+            bundleId: "company.thebrowser.dia",
+            windowTitles: ["scrambled eggs in rice cooker"],
+            urls: [],
+            snapshotCount: 2,
+            activeSeconds: 120
+        )
+        let perplexity = SessionApp(
+            appName: "Perplexity",
+            bundleId: "ai.perplexity.macv3",
+            windowTitles: [],
+            urls: [],
+            snapshotCount: 4,
+            activeSeconds: 180
+        )
+        let session = Session(
+            id: "detour",
+            startTime: Date(),
+            endTime: Date().addingTimeInterval(480),
+            durationSeconds: 480,
+            apps: [perplexity, dia],
+            activity: "Perplexity"
+        )
+
+        #expect(SessionDisplay.sessionTitle(for: session) == "scrambled eggs in rice cooker")
+        #expect(SessionDisplay.featuredApp(for: session)?.bundleId == dia.bundleId)
+        #expect(!SessionDisplay.shouldShowAppInList(dia, session: session))
+        #expect(SessionDisplay.shouldShowAppInList(perplexity, session: session))
+    }
+
+    @Test func normalizesGitHubDesktopRepositoryTitle() {
+        let github = app(
+            bundleId: "com.github.GitHubClient",
+            appName: "GitHub Desktop",
+            titles: ["Trace — GitHub Desktop"],
+            urls: ["file:///Users/dev/Developer/xcode/Trace"],
+            count: 3
+        )
+
+        #expect(SessionAppDisplay.displayLines(for: github).map(\.text) == ["Trace"])
+    }
+
+    @Test func displayNameMapsDiaToArc() {
+        let dia = SessionApp(
+            appName: "Dia",
+            bundleId: "company.thebrowser.dia",
+            windowTitles: ["Example"],
+            urls: [],
+            snapshotCount: 1
+        )
+        #expect(SessionAppDisplay.displayName(for: dia) == "Arc")
     }
 
     @Test func ranksPrimaryAppFirst() {

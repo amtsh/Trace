@@ -6,7 +6,7 @@ enum SessionDisplay {
     private static let timeSkewThreshold = 0.30
 
     static func elapsedSeconds(for session: Session) -> Int {
-        max(Int(session.endTime.timeIntervalSince(session.startTime)), 0)
+        max(session.durationSeconds, 0)
     }
 
     static func durationLabel(for session: Session) -> String {
@@ -27,7 +27,9 @@ enum SessionDisplay {
 
         if calendar.isDateInToday(end) {
             let seconds = max(Int(now.timeIntervalSince(end)), 0)
-            if seconds < 60 { return "Now" }
+            if seconds < 60 {
+                return end.formatted(Date.FormatStyle().hour().minute())
+            }
             if seconds < 3600 { return "\(seconds / 60)m ago" }
             return "\(seconds / 3600)h ago"
         }
@@ -79,7 +81,77 @@ enum SessionDisplay {
             return project
         }
 
+        if ranked.contains(where: {
+            SessionAppDisplay.inferredProject(for: $0)?.lowercased() == session.activity.lowercased()
+        }) {
+            return session.activity
+        }
+
+        if ranked.contains(where: { $0.appName.lowercased() == session.activity.lowercased() }),
+           let dominant = ranked.first(where: { $0.appName.lowercased() == session.activity.lowercased() }),
+           SessionAppDisplay.bestDisplayLine(for: dominant) == nil,
+           let contextual = SessionAppDisplay.bestContextTitle(in: ranked) {
+            return contextual
+        }
+
         return session.activity
+    }
+
+    static func featuredApp(for session: Session) -> SessionApp? {
+        let ranked = SessionAppDisplay.rankedApps(session.apps)
+        guard !ranked.isEmpty else { return nil }
+
+        let title = sessionTitle(for: session)
+        if let owner = ranked.first(where: {
+            SessionAppDisplay.bestDisplayLine(for: $0)?.text == title
+        }) {
+            return owner
+        }
+
+        if !ranked.contains(where: { $0.appName.lowercased() == session.activity.lowercased() }),
+           let owner = ranked.first(where: {
+               SessionAppDisplay.inferredProject(for: $0)?.lowercased() == session.activity.lowercased()
+           }) {
+            return owner
+        }
+
+        return SessionAppDisplay.appWithBestContext(in: ranked) ?? ranked.first
+    }
+
+    static func shouldShowAppInList(
+        _ app: SessionApp,
+        session: Session,
+        candidates: [SessionApp]? = nil
+    ) -> Bool {
+        let pool = candidates ?? SessionAppDisplay.rankedApps(session.apps)
+        let title = sessionTitle(for: session).lowercased()
+        let appName = app.appName.lowercased()
+        let displayName = SessionAppDisplay.displayName(for: app).lowercased()
+        let hasContext = !SessionAppDisplay.contextLines(for: app).isEmpty
+
+        if appName == title || displayName == title {
+            return pool.count > 1 ? false : hasContext
+        }
+
+        if let line = SessionAppDisplay.bestDisplayLine(for: app),
+           line.text == SessionDisplay.sessionTitle(for: session) {
+            let others = pool.filter { $0.bundleId != app.bundleId }
+            return others.isEmpty ? hasContext : false
+        }
+
+        return true
+    }
+
+    static func expandedApps(for session: Session) -> [SessionApp] {
+        let detail = session.apps.filter { SessionAppDisplay.shouldShowInDetail($0, in: session) }
+        let candidates = detail.isEmpty
+            ? SessionAppDisplay.rankedApps(session.apps)
+            : detail
+        let filtered = candidates.filter {
+            shouldShowAppInList($0, session: session, candidates: candidates)
+        }
+        if !filtered.isEmpty { return filtered }
+        return candidates
     }
 
     static func contextSubtitle(for session: Session) -> String? {
@@ -96,15 +168,16 @@ enum SessionDisplay {
         let activityLower = activity.lowercased()
         let textLower = text.lowercased()
 
-        // Strip only truly useless summaries — be conservative so the heuristic
-        // fallback (which uses file/title/project info) is not discarded.
         if textLower == activityLower { return nil }
         if textLower == "working in \(activityLower)" { return nil }
         if textLower == "no activity recorded" { return nil }
         if textLower == "work session" { return nil }
+        if textLower.hasPrefix("reviewed code in ") { return nil }
+        if textLower.hasPrefix("worked in ") { return nil }
 
-        // Strip if it's literally just a list of app names joined with " + "
-        let appNames = apps.map { $0.appName.lowercased() }
+        let appNames = apps.flatMap {
+            [$0.appName.lowercased(), SessionAppDisplay.displayName(for: $0).lowercased()]
+        }
         let summaryParts = textLower
             .components(separatedBy: " + ")
             .map { $0.trimmingCharacters(in: .whitespaces) }
@@ -133,20 +206,21 @@ enum SessionDisplay {
     }
 
     static func builtInContext(for session: Session) -> String? {
-        let ranked = SessionAppDisplay.rankedApps(session.apps)
-        guard let primary = ranked.first else { return nil }
-        return SessionAppDisplay.bestDisplayLine(for: primary)?.text
+        let title = sessionTitle(for: session)
+        for app in SessionAppDisplay.rankedApps(session.apps) {
+            if let line = SessionAppDisplay.bestDisplayLine(for: app),
+               line.text != title {
+                return line.text
+            }
+        }
+        return nil
     }
 
     static func appTimeShare(for app: SessionApp, in session: Session) -> String? {
         guard shouldShowAppTimeShares(for: session) else { return nil }
-        let total = session.apps.reduce(0) { $0 + $1.snapshotCount }
-        guard total > 0 else { return nil }
-
-        let seconds = elapsedSeconds(for: session)
-        let share = max(Int((Double(seconds) * Double(app.snapshotCount)) / Double(total)), 1)
-        if share < 60 { return "\(share)s" }
-        let minutes = share / 60
+        let seconds = max(app.activeSeconds, 1)
+        if seconds < 60 { return "\(seconds)s" }
+        let minutes = seconds / 60
         return minutes == 1 ? "1m" : "\(minutes)m"
     }
 
@@ -159,16 +233,11 @@ enum SessionDisplay {
     }
 
     private static func appTimeSkew(for session: Session) -> Double {
-        let totalSnapshots = session.apps.reduce(0) { $0 + $1.snapshotCount }
-        guard totalSnapshots > 0 else { return 0 }
+        let totalActive = session.apps.reduce(0) { $0 + $1.activeSeconds }
+        guard totalActive > 0 else { return 0 }
 
-        let seconds = Double(elapsedSeconds(for: session))
-        guard seconds > 0 else { return 0 }
-
-        let shares = session.apps.map {
-            Double($0.snapshotCount) / Double(totalSnapshots) * seconds
-        }
+        let shares = session.apps.map { Double($0.activeSeconds) / Double(totalActive) }
         guard let maxShare = shares.max(), let minShare = shares.min() else { return 0 }
-        return (maxShare - minShare) / seconds
+        return maxShare - minShare
     }
 }
