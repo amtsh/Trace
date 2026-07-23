@@ -40,9 +40,9 @@ final class SidebarPanelController {
         let visible = screen.visibleFrame
         let startFrame = NSRect(
             x: visible.maxX,
-            y: visible.minY,
+            y: endFrame.minY,
             width: Self.width,
-            height: visible.height
+            height: endFrame.height
         )
 
         if panel == nil {
@@ -55,8 +55,8 @@ final class SidebarPanelController {
             panel.isFloatingPanel = true
             panel.level = .popUpMenu
             panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
-            panel.backgroundColor = NSColor.windowBackgroundColor
-            panel.isOpaque = true
+            panel.backgroundColor = .clear
+            panel.isOpaque = false
             panel.hasShadow = true
             panel.hidesOnDeactivate = false
             panel.isReleasedWhenClosed = false
@@ -103,7 +103,7 @@ final class SidebarPanelController {
             ctx.duration = 0.2
             ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
             panel.animator().setFrameOrigin(
-                NSPoint(x: screen.visibleFrame.maxX, y: screen.visibleFrame.minY)
+                NSPoint(x: screen.visibleFrame.maxX, y: panel.frame.minY)
             )
         } completionHandler: {
             DispatchQueue.main.async {
@@ -116,11 +116,12 @@ final class SidebarPanelController {
 
     private func panelFrame(on screen: NSScreen) -> NSRect {
         let visible = screen.visibleFrame
+        let margin: CGFloat = 12
         return NSRect(
-            x: visible.maxX - Self.width,
-            y: visible.minY,
+            x: visible.maxX - Self.width - margin,
+            y: visible.minY + margin,
             width: Self.width,
-            height: visible.height
+            height: visible.height - margin * 2
         )
     }
 
@@ -160,6 +161,8 @@ final class SidebarPanelController {
 private struct SidebarRootView: View {
     let appState: AppState
 
+    private static let cornerRadius: CGFloat = 22
+
     var body: some View {
         Group {
             if appState.hasCompletedOnboarding {
@@ -169,9 +172,24 @@ private struct SidebarRootView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(.background)
-        .clipShape(.rect(topLeadingRadius: 10, bottomLeadingRadius: 10))
-        .shadow(color: .black.opacity(0.18), radius: 10, x: -3)
+        .background(VisualEffectBackground())
+        .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
+                .strokeBorder(.separator.opacity(0.5), lineWidth: 1)
+        )
         .environment(appState)
     }
+}
+
+private struct VisualEffectBackground: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = .popover
+        view.blendingMode = .behindWindow
+        view.state = .active
+        return view
+    }
+
+    func updateNSView(_ view: NSVisualEffectView, context: Context) {}
 }

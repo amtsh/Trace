@@ -6,6 +6,7 @@ struct SessionCardView: View {
     @State private var isExpanded = false
     @State private var isRestoring = false
     @State private var restoreMessage: String?
+    @State private var isHovering = false
 
     private var detailApps: [SessionApp] {
         session.apps.filter { SessionAppDisplay.shouldShowInDetail($0, in: session) }
@@ -100,7 +101,7 @@ struct SessionCardView: View {
             .contentShape(Rectangle())
             .onTapGesture {
                 guard !session.apps.isEmpty else { return }
-                withAnimation(.easeInOut(duration: 0.2)) {
+                withAnimation(.smooth(duration: 0.25)) {
                     isExpanded.toggle()
                     if !isExpanded { restoreMessage = nil }
                 }
@@ -121,7 +122,7 @@ struct SessionCardView: View {
                                 .frame(maxWidth: .infinity)
                         }
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.glassProminent)
                     .controlSize(.small)
                     .disabled(isRestoring)
 
@@ -156,12 +157,13 @@ struct SessionCardView: View {
                                 .font(.caption.weight(.medium))
                                 .frame(maxWidth: .infinity)
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.glass)
                         .controlSize(.small)
                     }
                 }
                 .padding(10)
-                .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 8))
+                .background(.quinary, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .transition(.blurReplace)
             }
 
             if !appState.hasAccessibilityPermission {
@@ -170,8 +172,14 @@ struct SessionCardView: View {
                     .foregroundStyle(.orange)
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .padding(14)
+        .background(
+            .quaternary.opacity(isHovering && !isExpanded ? 0.65 : 0.45),
+            in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+        )
+        .onHover { hovering in
+            withAnimation(.smooth(duration: 0.15)) { isHovering = hovering }
+        }
         .opacity(isHidden ? 0.45 : 1)
         .contextMenu {
             Button {
@@ -205,6 +213,7 @@ struct AppDetailRow: View {
 
     @Environment(AppState.self) private var appState
     @State private var isRestoring = false
+    @State private var isRowHovered = false
 
     private var displayLines: [SessionAppDisplay.Line] {
         SessionAppDisplay.contextLines(for: app)
@@ -261,12 +270,17 @@ struct AppDetailRow: View {
                 .foregroundStyle(.secondary)
                 .buttonStyle(.plain)
                 .disabled(isRestoring)
+                .opacity(isRowHovered || isRestoring ? 1 : 0)
                 .help(SessionAppDisplay.hasRestorableContent(app)
                       ? "Reopen \(app.appName) with its tabs and documents"
                       : "Open \(app.appName)")
             }
         }
         .padding(.vertical, 6)
+        .contentShape(Rectangle())
+        .onHover { hovering in
+            withAnimation(.smooth(duration: 0.15)) { isRowHovered = hovering }
+        }
     }
 
     private func openWithState() async {

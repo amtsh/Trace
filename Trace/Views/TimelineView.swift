@@ -3,14 +3,16 @@ import SwiftUI
 struct TimelineView: View {
     @Environment(AppState.self) private var appState
     var body: some View {
-        VStack(spacing: 0) {
-            header
-            Divider()
-
+        Group {
             if appState.sessions.isEmpty {
-                emptyState
+                VStack(spacing: 0) {
+                    header
+                    emptyState
+                }
             } else {
                 sessionList
+                    .safeAreaInset(edge: .top, spacing: 0) { header }
+                    .scrollEdgeEffectStyle(.soft, for: .top)
             }
         }
         .task {
@@ -28,17 +30,17 @@ struct TimelineView: View {
     // MARK: - Header
 
     private var header: some View {
-        HStack {
+        HStack(spacing: 8) {
             Text("Trace")
-                .font(.headline)
+                .font(.title3.weight(.semibold))
             if appState.isTracking {
                 PollCountdownRing(lastPoll: appState.lastPollDate)
             } else {
                 Text("Paused")
-                    .font(.caption2)
+                    .font(.caption2.weight(.medium))
                     .foregroundStyle(.orange)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
                     .background(.orange.opacity(0.15), in: Capsule())
             }
             Spacer()
@@ -57,15 +59,19 @@ struct TimelineView: View {
                 }
             } label: {
                 Image(systemName: "ellipsis")
-                    .font(.body)
+                    .font(.callout.weight(.medium))
                     .foregroundStyle(.secondary)
+                    .frame(width: 28, height: 28)
+                    .background(.quaternary.opacity(0.5), in: Circle())
+                    .contentShape(Circle())
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.top, 16)
+        .padding(.bottom, 10)
     }
 
     private func confirmAndClearData() {
@@ -83,37 +89,27 @@ struct TimelineView: View {
     // MARK: - Empty state
 
     private var emptyState: some View {
-        VStack(spacing: 12) {
-            Spacer()
-            Image(systemName: "clock.arrow.circlepath")
-                .font(.system(size: 32))
-                .foregroundStyle(.secondary)
-            Text("No activity yet")
-                .font(.headline)
+        ContentUnavailableView {
+            Label("No Activity Yet", systemImage: "clock.arrow.circlepath")
+        } description: {
             Text("Trace records what you're working on.\nCheck back shortly.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-            Spacer()
         }
-        .padding()
     }
 
     // MARK: - Session list
 
     private var sessionList: some View {
         ScrollView {
-            LazyVStack(spacing: 0, pinnedViews: .sectionHeaders) {
+            LazyVStack(alignment: .leading, spacing: 8) {
                 ForEach(dayGroups, id: \.label) { group in
-                    Section {
-                        ForEach(group.sessions) { session in
-                            SessionCardView(session: session)
-                            if session.id != group.sessions.last?.id {
-                                Divider().padding(.leading, 16)
-                            }
-                        }
-                    } header: {
-                        daySectionHeader(group.label)
+                    Text(group.label)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 4)
+                        .padding(.top, 6)
+
+                    ForEach(group.sessions) { session in
+                        SessionCardView(session: session)
                     }
                 }
 
@@ -121,6 +117,8 @@ struct TimelineView: View {
                     hiddenRowsFooter
                 }
             }
+            .padding(.horizontal, 12)
+            .padding(.bottom, 14)
         }
     }
 
@@ -130,33 +128,23 @@ struct TimelineView: View {
                 appState.showHiddenSessions.toggle()
             }
         } label: {
-            HStack(spacing: 4) {
+            HStack(spacing: 5) {
                 Image(systemName: appState.showHiddenSessions ? "eye" : "eye.slash")
-                    .font(.caption2)
                 let count = appState.hiddenSessionCount
                 Text(appState.showHiddenSessions
                      ? "Hide \(count) hidden \(count == 1 ? "row" : "rows")"
                      : "Show \(count) hidden \(count == 1 ? "row" : "rows")")
-                    .font(.caption)
             }
+            .font(.caption.weight(.medium))
             .foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 8)
-            .contentShape(Rectangle())
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(.quaternary.opacity(0.5), in: Capsule())
+            .contentShape(Capsule())
         }
         .buttonStyle(.plain)
-    }
-
-    private func daySectionHeader(_ label: String) -> some View {
-        HStack {
-            Text(label)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
-            Spacer()
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 6)
-        .background(.bar)
+        .frame(maxWidth: .infinity)
+        .padding(.top, 4)
     }
 
     // MARK: - Day grouping
@@ -215,7 +203,7 @@ private struct PollCountdownRing: View {
             Circle()
                 .trim(from: 0, to: remaining)
                 .stroke(style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
-                .foregroundStyle(.quaternary)
+                .foregroundStyle(.tertiary)
                 .rotationEffect(.degrees(-90))
                 .frame(width: 10, height: 10)
                 .animation(.linear(duration: 1), value: remaining)

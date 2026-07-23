@@ -11,7 +11,10 @@ final class ActivityTracker {
     private var wakeObserver: (any NSObjectProtocol)?
     private var periodicTimer: Timer?
     private var lastContext: CapturedContext?
+    private var pendingActivationCapture: Task<Void, Never>?
     private(set) var isRunning = false
+
+    private static let activationDwellSeconds: Double = 10
 
     init(database: SnapshotDatabase) {
         self.database = database
@@ -26,7 +29,7 @@ final class ActivityTracker {
             forName: NSWorkspace.didActivateApplicationNotification,
             object: nil, queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in await self?.captureSnapshot() }
+            self?.scheduleActivationCapture()
         }
 
         startPeriodicTimer()
@@ -37,6 +40,8 @@ final class ActivityTracker {
         ) { [weak self] _ in
             self?.periodicTimer?.invalidate()
             self?.periodicTimer = nil
+            self?.pendingActivationCapture?.cancel()
+            self?.pendingActivationCapture = nil
         }
 
         wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
@@ -55,6 +60,8 @@ final class ActivityTracker {
         isRunning = false
         periodicTimer?.invalidate()
         periodicTimer = nil
+        pendingActivationCapture?.cancel()
+        pendingActivationCapture = nil
         [appSwitchObserver, sleepObserver, wakeObserver]
             .compactMap { $0 }
             .forEach { NSWorkspace.shared.notificationCenter.removeObserver($0) }
@@ -67,6 +74,15 @@ final class ActivityTracker {
     var onPollCompleted: (() -> Void)?
 
     // MARK: - Private
+
+    private func scheduleActivationCapture() {
+        pendingActivationCapture?.cancel()
+        pendingActivationCapture = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(Self.activationDwellSeconds))
+            guard !Task.isCancelled else { return }
+            await self?.captureSnapshot()
+        }
+    }
 
     private func startPeriodicTimer() {
         periodicTimer?.invalidate()
