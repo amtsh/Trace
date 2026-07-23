@@ -141,10 +141,8 @@ struct SessionCardView: View {
                                 AppDetailRow(
                                     app: app,
                                     session: session,
-                                    showSessionActions: !isSingleApp
-                                ) { result in
-                                    restoreMessage = result
-                                }
+                                    showOpenAction: !isSingleApp
+                                )
                                 if app.id != listApps.last?.id {
                                     Divider().padding(.leading, 36)
                                 }
@@ -174,6 +172,19 @@ struct SessionCardView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
+        .opacity(isHidden ? 0.45 : 1)
+        .contextMenu {
+            Button {
+                appState.setSession(session, hidden: !isHidden)
+            } label: {
+                Label(isHidden ? "Show Row" : "Hide Row",
+                      systemImage: isHidden ? "eye" : "eye.slash")
+            }
+        }
+    }
+
+    private var isHidden: Bool {
+        appState.isSessionHidden(session)
     }
 
     private func restoreSession() async {
@@ -190,8 +201,7 @@ struct SessionCardView: View {
 struct AppDetailRow: View {
     let app: SessionApp
     let session: Session
-    var showSessionActions = true
-    let onRestoreFeedback: (String) -> Void
+    var showOpenAction = true
 
     @Environment(AppState.self) private var appState
     @State private var isRestoring = false
@@ -205,7 +215,7 @@ struct AppDetailRow: View {
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
+        HStack(alignment: .center, spacing: 10) {
             AppIconBadge(app: app, size: 24)
 
             VStack(alignment: .leading, spacing: 3) {
@@ -236,40 +246,37 @@ struct AppDetailRow: View {
 
             Spacer()
 
-            if showSessionActions {
-                Menu {
-                    if SessionAppDisplay.hasRestorableContent(app) {
-                        Button {
-                            Task { await reopenWindows() }
-                        } label: {
-                            Label("Reopen windows", systemImage: "arrow.uturn.backward")
-                        }
-                        .disabled(isRestoring)
-                    }
-                    Button {
-                        appState.openApp(bundleId: app.bundleId)
-                    } label: {
-                        Label("Open app", systemImage: "arrow.up.forward.app")
-                    }
+            if showOpenAction {
+                Button {
+                    Task { await openWithState() }
                 } label: {
-                    Image(systemName: isRestoring ? "hourglass" : "ellipsis.circle")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .frame(width: 24, height: 24)
+                    if isRestoring {
+                        ProgressView()
+                            .controlSize(.mini)
+                    } else {
+                        Text("Open")
+                    }
                 }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .fixedSize()
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+                .buttonStyle(.plain)
+                .disabled(isRestoring)
+                .help(SessionAppDisplay.hasRestorableContent(app)
+                      ? "Reopen \(app.appName) with its tabs and documents"
+                      : "Open \(app.appName)")
             }
         }
         .padding(.vertical, 6)
     }
 
-    private func reopenWindows() async {
-        isRestoring = true
-        let result = await appState.restoreApp(app)
-        onRestoreFeedback(RestoreFeedback.message(for: result, appName: app.appName))
-        isRestoring = false
+    private func openWithState() async {
+        if SessionAppDisplay.hasRestorableContent(app) {
+            isRestoring = true
+            _ = await appState.restoreApp(app)
+            isRestoring = false
+        } else {
+            appState.openApp(bundleId: app.bundleId)
+        }
     }
 }
 

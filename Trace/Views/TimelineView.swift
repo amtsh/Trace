@@ -116,8 +116,35 @@ struct TimelineView: View {
                         daySectionHeader(group.label)
                     }
                 }
+
+                if appState.hiddenSessionCount > 0 {
+                    hiddenRowsFooter
+                }
             }
         }
+    }
+
+    private var hiddenRowsFooter: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                appState.showHiddenSessions.toggle()
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: appState.showHiddenSessions ? "eye" : "eye.slash")
+                    .font(.caption2)
+                let count = appState.hiddenSessionCount
+                Text(appState.showHiddenSessions
+                     ? "Hide \(count) hidden \(count == 1 ? "row" : "rows")"
+                     : "Show \(count) hidden \(count == 1 ? "row" : "rows")")
+                    .font(.caption)
+            }
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     private func daySectionHeader(_ label: String) -> some View {
@@ -140,7 +167,7 @@ struct TimelineView: View {
         var currentLabel = ""
         var currentSessions: [Session] = []
 
-        for session in appState.sessions {
+        for session in appState.visibleSessions {
             let key = dayKey(session.startTime)
             if key != currentKey {
                 if !currentSessions.isEmpty {

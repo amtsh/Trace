@@ -127,13 +127,15 @@ enum SessionDisplay {
         var parts: [String] = []
 
         let primaryLines = SessionAppDisplay.contextLines(for: primary)
-        if !primaryLines.isEmpty {
-            parts.append(contentsOf: primaryLines.prefix(3).map(\.text))
-        }
+            .map { $0.text.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        parts.append(contentsOf: primaryLines.prefix(3))
 
         for app in ranked.dropFirst() {
-            if let line = SessionAppDisplay.bestDisplayLine(for: app) {
-                parts.append("\(app.appName): \(line.text)")
+            let lineText = SessionAppDisplay.bestDisplayLine(for: app)?
+                .text.trimmingCharacters(in: .whitespaces) ?? ""
+            if !lineText.isEmpty {
+                parts.append("\(app.appName): \(lineText)")
             } else if shouldShowAppTimeShares(for: session),
                       let share = appTimeShare(for: app, in: session) {
                 parts.append("\(app.appName) (\(share))")
@@ -142,7 +144,7 @@ enum SessionDisplay {
             }
         }
 
-        let joined = parts.joined(separator: " · ")
+        let joined = parts.filter { !$0.isEmpty }.joined(separator: " · ")
         return joined.isEmpty ? nil : joined
     }
 

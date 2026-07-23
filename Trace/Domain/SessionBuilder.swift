@@ -3,6 +3,12 @@ import Foundation
 enum SessionBuilder {
     private static let hardBreakSeconds: TimeInterval = 30 * 60
     private static let unrelatedSnapshotThreshold = 2
+    private static let substantialDetourSeconds: TimeInterval = 5 * 60
+
+    private static let assistantBundles: Set<String> = [
+        "com.anthropic.claude",
+        "com.openai.chat",
+    ]
     private static let xcodeBundle = "com.apple.dt.Xcode"
 
     private static let workBundles: Set<String> = [
@@ -16,6 +22,7 @@ enum SessionBuilder {
         "com.apple.Safari",
         "com.google.Chrome",
         "company.thebrowser.Browser",
+        "company.thebrowser.dia",
         "org.mozilla.firefox",
         "com.brave.Browser",
         "com.microsoft.edgemac",
@@ -44,18 +51,32 @@ enum SessionBuilder {
             relatedProject = nil
         }
 
-        func flushUnrelated() {
-            guard unrelatedPending.count >= unrelatedSnapshotThreshold else {
-                unrelatedPending = []
-                return
+        func isSubstantialDetour(endingAt end: Date) -> Bool {
+            guard unrelatedPending.count >= unrelatedSnapshotThreshold,
+                  let first = unrelatedPending.first else { return false }
+            return end.timeIntervalSince(first.timestamp) >= substantialDetourSeconds
+        }
+
+        func flushAtBoundary() {
+            let end = unrelatedPending.last?.timestamp ?? .distantPast
+            if isSubstantialDetour(endingAt: end) {
+                flushRelated()
+                let project = unrelatedPending.compactMap { extractProject(from: $0) }.first
+                groups.append((unrelatedPending, project))
+            } else {
+                related.append(contentsOf: unrelatedPending)
+                flushRelated()
             }
-            let project = unrelatedPending.compactMap { extractProject(from: $0) }.first
-            groups.append((unrelatedPending, project))
             unrelatedPending = []
         }
 
         func absorbRelated(_ snap: Snapshot) {
-            related.append(contentsOf: unrelatedPending)
+            if isSubstantialDetour(endingAt: snap.timestamp) {
+                let project = unrelatedPending.compactMap { extractProject(from: $0) }.first
+                groups.append((unrelatedPending, project))
+            } else {
+                related.append(contentsOf: unrelatedPending)
+            }
             unrelatedPending = []
             related.append(snap)
             if let project = extractProject(from: snap) {
@@ -70,8 +91,7 @@ enum SessionBuilder {
             let gap = snap.timestamp.timeIntervalSince(anchor.timestamp)
 
             if gap > hardBreakSeconds {
-                flushRelated()
-                flushUnrelated()
+                flushAtBoundary()
                 absorbRelated(snap)
                 continue
             }
@@ -79,8 +99,7 @@ enum SessionBuilder {
             if let project = extractProject(from: snap),
                let current = relatedProject,
                projectsConflict(current: current, next: project) {
-                flushRelated()
-                flushUnrelated()
+                flushAtBoundary()
                 absorbRelated(snap)
                 continue
             }
@@ -89,16 +108,10 @@ enum SessionBuilder {
                 absorbRelated(snap)
             } else {
                 unrelatedPending.append(snap)
-                if unrelatedPending.count >= unrelatedSnapshotThreshold {
-                    flushRelated()
-                    flushUnrelated()
-                }
             }
         }
 
-        related.append(contentsOf: unrelatedPending)
-        unrelatedPending = []
-        flushRelated()
+        flushAtBoundary()
 
         return groups.map { makeSession(from: $0.snapshots, project: $0.project) }.reversed()
     }
@@ -119,6 +132,8 @@ enum SessionBuilder {
             return true
         }
 
+        if assistantBundles.contains(snapshot.appBundle) { return true }
+
         if isWorkApp(snapshot.appBundle) {
             if let sessionProject, let url = snapshot.documentURL,
                let pathProject = projectFromFileURL(url) {
@@ -128,10 +143,7 @@ enum SessionBuilder {
         }
 
         if let sessionProject {
-            if browserBundles.contains(snapshot.appBundle) {
-                return contentRelatesToProject(snapshot, project: sessionProject)
-            }
-            return true
+            return contentRelatesToProject(snapshot, project: sessionProject)
         }
 
         return true
@@ -307,13 +319,7 @@ enum SessionBuilder {
         if single.hasSuffix(".xcodeproj") || single.hasSuffix(".xcworkspace") {
             return normalizeProjectName(single)
         }
-        if !looksLikeSourceFile(single) {
-            return single
-        }
-        if let project = documentURL.flatMap(projectFromFileURL) {
-            return project
-        }
-        return nil
+        return documentURL.flatMap(projectFromFileURL)
     }
 
     private static func projectFromTerminalTitle(_ title: String) -> String? {

@@ -8,6 +8,8 @@ final class AppState {
     var hasCompletedOnboarding: Bool
     var hasAccessibilityPermission: Bool
     var lastPollDate: Date = .now
+    var showHiddenSessions = false
+    private(set) var hiddenSessionIds: Set<String>
 
     private let database: SnapshotDatabase
     private let tracker: ActivityTracker
@@ -19,6 +21,7 @@ final class AppState {
         self.database = db
         self.tracker = ActivityTracker(database: db)
         self.hasCompletedOnboarding = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
+        self.hiddenSessionIds = Set(UserDefaults.standard.stringArray(forKey: "hiddenSessionIds") ?? [])
         self.hasAccessibilityPermission = PermissionManager.hasAccessibilityPermission
 
         tracker.onPollCompleted = { [weak self] in
@@ -58,6 +61,27 @@ final class AppState {
         } catch {
             // Keep existing sessions on failure
         }
+    }
+
+    var visibleSessions: [Session] {
+        showHiddenSessions ? sessions : sessions.filter { !hiddenSessionIds.contains($0.id) }
+    }
+
+    var hiddenSessionCount: Int {
+        sessions.filter { hiddenSessionIds.contains($0.id) }.count
+    }
+
+    func isSessionHidden(_ session: Session) -> Bool {
+        hiddenSessionIds.contains(session.id)
+    }
+
+    func setSession(_ session: Session, hidden: Bool) {
+        if hidden {
+            hiddenSessionIds.insert(session.id)
+        } else {
+            hiddenSessionIds.remove(session.id)
+        }
+        UserDefaults.standard.set(Array(hiddenSessionIds), forKey: "hiddenSessionIds")
     }
 
     func restoreSession(_ session: Session) async -> RestoreResult {
@@ -114,7 +138,20 @@ final class AppState {
     private func pruneAndLoad() async {
         let cutoff = Calendar.current.date(byAdding: .day, value: -7, to: Date())!
         try? await database.pruneOlderThan(cutoff)
+        pruneHiddenIds(before: cutoff)
         await refreshTimeline()
         lastRefresh = Date()
+    }
+
+    private func pruneHiddenIds(before cutoff: Date) {
+        let cutoffTimestamp = Int(cutoff.timeIntervalSince1970)
+        let pruned = hiddenSessionIds.filter { id in
+            guard let ts = Int(id.dropFirst("session-".count)) else { return true }
+            return ts >= cutoffTimestamp
+        }
+        if pruned != hiddenSessionIds {
+            hiddenSessionIds = pruned
+            UserDefaults.standard.set(Array(pruned), forKey: "hiddenSessionIds")
+        }
     }
 }

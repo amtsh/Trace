@@ -112,6 +112,10 @@ final class ActivityTracker {
                     windowTitle = contentTitle
                 }
             }
+
+            if documentURL == nil, Self.chatBundles.contains(bundleId) {
+                documentURL = webContentURL(axApp)
+            }
         }
 
         if documentURL == nil, Self.browserBundles.contains(bundleId) {
@@ -182,6 +186,47 @@ final class ActivityTracker {
         return findWebAreaTitle(windowRef as! AXUIElement, depth: 5)
     }
 
+    private func webContentURL(_ axApp: AXUIElement) -> String? {
+        var windowRef: AnyObject?
+        guard AXUIElementCopyAttributeValue(
+            axApp, kAXFocusedWindowAttribute as CFString, &windowRef
+        ) == .success else { return nil }
+        return findWebAreaURL(windowRef as! AXUIElement, depth: 6)
+    }
+
+    private func findWebAreaURL(_ element: AXUIElement, depth: Int) -> String? {
+        guard depth > 0 else { return nil }
+
+        var childrenRef: AnyObject?
+        guard AXUIElementCopyAttributeValue(
+            element, kAXChildrenAttribute as CFString, &childrenRef
+        ) == .success, let children = childrenRef as? [AXUIElement] else { return nil }
+
+        for child in children.prefix(8) {
+            var roleRef: AnyObject?
+            if AXUIElementCopyAttributeValue(
+                child, kAXRoleAttribute as CFString, &roleRef
+            ) == .success, (roleRef as? String) == "AXWebArea" {
+                var urlRef: AnyObject?
+                if AXUIElementCopyAttributeValue(
+                    child, "AXURL" as CFString, &urlRef
+                ) == .success {
+                    if let url = urlRef as? NSURL, let absolute = url.absoluteString,
+                       absolute.hasPrefix("http") {
+                        return absolute
+                    }
+                    if let string = urlRef as? String, string.hasPrefix("http") {
+                        return string
+                    }
+                }
+            }
+            if let found = findWebAreaURL(child, depth: depth - 1) {
+                return found
+            }
+        }
+        return nil
+    }
+
     private func findWebAreaTitle(_ element: AXUIElement, depth: Int) -> String? {
         guard depth > 0 else { return nil }
 
@@ -229,9 +274,17 @@ final class ActivityTracker {
         "com.apple.Safari",
         "com.google.Chrome",
         "company.thebrowser.Browser",
+        "company.thebrowser.dia",
         "org.mozilla.firefox",
         "com.brave.Browser",
         "com.microsoft.edgemac",
+    ]
+
+    private static let chatBundles: Set<String> = [
+        "com.anthropic.claude",
+        "com.anthropic.claudefordesktop",
+        "com.openai.chat",
+        "ai.perplexity.mac",
     ]
 
     private func browserURL(bundleId: String) -> String? {
@@ -251,6 +304,8 @@ final class ActivityTracker {
             script = "tell application \"Microsoft Edge\" to return URL of active tab of front window"
         case "company.thebrowser.Browser":
             script = "tell application \"Arc\" to return URL of active tab of front window"
+        case "company.thebrowser.dia":
+            script = "tell application \"Dia\" to return URL of active tab of front window"
         default:
             return nil
         }

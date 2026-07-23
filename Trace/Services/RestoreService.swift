@@ -61,6 +61,19 @@ final class RestoreService {
                 }
                 try? await Task.sleep(for: .milliseconds(200))
             }
+
+            let webURLs = app.urls.compactMap { urlString -> URL? in
+                guard urlString.hasPrefix("http") else { return nil }
+                return URL(string: urlString)
+            }
+            for webURL in webURLs.prefix(3) {
+                if NSWorkspace.shared.open(webURL) {
+                    restored.append(DisplayURL.format(webURL.absoluteString))
+                } else {
+                    failed.append((DisplayURL.format(webURL.absoluteString), "Couldn't open link"))
+                }
+                try? await Task.sleep(for: .milliseconds(200))
+            }
         }
 
         return RestoreResult(restored: restored, failed: failed)
@@ -72,6 +85,7 @@ final class RestoreService {
         "com.apple.Safari",
         "com.google.Chrome",
         "company.thebrowser.Browser",
+        "company.thebrowser.dia",
         "com.brave.Browser",
         "com.microsoft.edgemac",
     ]
@@ -94,10 +108,11 @@ final class RestoreService {
                     end if
                 end tell
             """
-        case "com.google.Chrome", "com.brave.Browser", "com.microsoft.edgemac":
+        case "com.google.Chrome", "com.brave.Browser", "com.microsoft.edgemac", "company.thebrowser.dia":
             let name = switch bundleId {
                 case "com.google.Chrome": "Google Chrome"
                 case "com.brave.Browser": "Brave Browser"
+                case "company.thebrowser.dia": "Dia"
                 default: "Microsoft Edge"
             }
             script = """

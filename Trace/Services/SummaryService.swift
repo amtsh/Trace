@@ -99,22 +99,27 @@ actor SummaryService: Summarizer {
         var parts: [String] = []
 
         if let primary = apps.first {
-            if let summary = primarySummary(for: primary), !summary.isEmpty {
+            if let summary = primarySummary(for: primary)?.trimmingCharacters(in: .whitespaces),
+               !summary.isEmpty {
                 parts.append(summary)
             }
             let extraLines = SessionAppDisplay.contextLines(for: primary).dropFirst().prefix(2)
-            parts.append(contentsOf: extraLines.map(\.text))
+                .map { $0.text.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }
+            parts.append(contentsOf: extraLines)
         }
 
         for app in apps.dropFirst().prefix(2) {
-            if let line = SessionAppDisplay.bestDisplayLine(for: app) {
-                parts.append("\(app.appName): \(line.text)")
+            let lineText = SessionAppDisplay.bestDisplayLine(for: app)?
+                .text.trimmingCharacters(in: .whitespaces) ?? ""
+            if !lineText.isEmpty {
+                parts.append("\(app.appName): \(lineText)")
             } else {
                 parts.append(app.appName)
             }
         }
 
-        return parts.joined(separator: " · ")
+        return parts.filter { !$0.isEmpty }.joined(separator: " · ")
     }
 
     private func primarySummary(for app: SessionApp) -> String? {

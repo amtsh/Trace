@@ -30,9 +30,15 @@ enum SessionAppDisplay {
 
     private static let chatAppSuffixes: [String: [String]] = [
         "com.anthropic.claude": ["Claude"],
+        "com.anthropic.claudefordesktop": ["Claude"],
         "com.openai.chat": ["ChatGPT"],
+        "ai.perplexity.mac": ["Perplexity"],
         "com.notion.id": ["Notion"],
     ]
+
+    static func isChatApp(_ bundleId: String) -> Bool {
+        chatAppSuffixes[bundleId] != nil
+    }
 
     static func rankedApps(_ apps: [SessionApp]) -> [SessionApp] {
         apps.sorted { rank($0) > rank($1) }
@@ -135,12 +141,14 @@ enum SessionAppDisplay {
             appendTitleLines(filteredTitles, to: &lines, seen: &seen, skipMatching: lines.map(\.text))
         } else {
             appendTitleLines(filteredTitles, to: &lines, seen: &seen)
-            for url in filteredURLs.sorted() {
-                let formatted = DisplayURL.format(url)
-                let key = formatted.lowercased()
-                guard !seen.contains(where: { formatted.contains($0) || $0.contains(key) }) else { continue }
-                guard seen.insert(key).inserted else { continue }
-                lines.append(Line(id: "url-\(key)", text: formatted, isPath: url.hasPrefix("file://")))
+            if !isChatApp(app.bundleId) || lines.isEmpty {
+                for url in filteredURLs.sorted() {
+                    let formatted = DisplayURL.format(url)
+                    let key = formatted.lowercased()
+                    guard !seen.contains(where: { formatted.contains($0) || $0.contains(key) }) else { continue }
+                    guard seen.insert(key).inserted else { continue }
+                    lines.append(Line(id: "url-\(key)", text: formatted, isPath: url.hasPrefix("file://")))
+                }
             }
         }
 
@@ -231,8 +239,16 @@ enum SessionAppDisplay {
 
     // MARK: - Title normalization
 
+    private static func strippingInvisibles(_ text: String) -> String {
+        String(text.filter { char in
+            !char.unicodeScalars.allSatisfy {
+                $0.properties.generalCategory == .format || $0.properties.generalCategory == .control
+            }
+        })
+    }
+
     private static func normalizeTitle(_ title: String, appName: String, bundleId: String) -> String {
-        var trimmed = title.trimmingCharacters(in: .whitespaces)
+        var trimmed = strippingInvisibles(title).trimmingCharacters(in: .whitespaces)
         if trimmed.isEmpty { return trimmed }
 
         if trimmed.lowercased() == appName.lowercased() { return trimmed }

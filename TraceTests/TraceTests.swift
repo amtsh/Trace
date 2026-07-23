@@ -91,30 +91,105 @@ struct SessionBuilderTests {
             snapshot(id: 3, at: base.addingTimeInterval(120), title: "ElevenLabs Pronunciation",
                      url: "https://www.perplexity.ai/search/elevenlabs", bundle: "com.google.Chrome",
                      appName: "Google Chrome"),
-            snapshot(id: 4, at: base.addingTimeInterval(150), title: "How to make mac app",
+            snapshot(id: 4, at: base.addingTimeInterval(300), title: "How to make mac app",
                      url: "https://www.perplexity.ai/search/mac-app", bundle: "com.google.Chrome",
                      appName: "Google Chrome"),
-            snapshot(id: 5, at: base.addingTimeInterval(210), title: "Trace — SessionCardView.swift",
+            snapshot(id: 5, at: base.addingTimeInterval(420), title: "Trace — SessionCardView.swift",
                      url: "file:///Users/dev/Trace/Trace/Views/SessionCardView.swift"),
         ]
 
         let sessions = SessionBuilder.buildSessions(from: snapshots)
 
-        #expect(sessions.count == 3)
+        #expect(sessions.count == 2)
         #expect(sessions[0].activity == "Trace")
+        #expect(sessions[0].apps.contains { $0.appName == "Xcode" })
         #expect(sessions[1].apps.contains { $0.appName == "Google Chrome" })
-        #expect(sessions[2].activity == "Trace")
     }
 
-    @Test func keepsChatAppInSessionDuringWork() {
+    @Test func keepsSustainedAssistantChatInWorkSession() {
+        let base = Date(timeIntervalSince1970: 1_700_000_000)
+        let snapshots = [
+            snapshot(id: 1, at: base, title: "Trace — TraceApp.swift",
+                     url: "file:///Users/dev/Trace/Trace/TraceApp.swift"),
+            snapshot(id: 2, at: base.addingTimeInterval(60), title: "Fix session splitting — Claude",
+                     bundle: "com.anthropic.claude", appName: "Claude"),
+            snapshot(id: 3, at: base.addingTimeInterval(360), title: "Claude",
+                     bundle: "com.anthropic.claude", appName: "Claude"),
+            snapshot(id: 4, at: base.addingTimeInterval(600), title: "Trace — TimelineView.swift",
+                     url: "file:///Users/dev/Trace/Trace/Views/TimelineView.swift"),
+        ]
+
+        let sessions = SessionBuilder.buildSessions(from: snapshots)
+
+        #expect(sessions.count == 1)
+        #expect(sessions[0].activity == "Trace")
+        #expect(sessions[0].apps.contains { $0.appName == "Claude" })
+    }
+
+    @Test func absorbsSingleChatGlanceDuringWork() {
         let base = Date(timeIntervalSince1970: 1_700_000_000)
         let snapshots = [
             snapshot(id: 1, at: base, title: "Trace — TraceApp.swift",
                      url: "file:///Users/dev/Trace/Trace/TraceApp.swift"),
             snapshot(id: 2, at: base.addingTimeInterval(60), title: "ElevenLabs Pronunciation — Claude",
                      bundle: "com.anthropic.claude", appName: "Claude"),
-            snapshot(id: 3, at: base.addingTimeInterval(90), title: "Help with SwiftUI — Claude",
-                     bundle: "com.anthropic.claude", appName: "Claude"),
+            snapshot(id: 3, at: base.addingTimeInterval(120), title: "Trace — TimelineView.swift",
+                     url: "file:///Users/dev/Trace/Trace/Views/TimelineView.swift"),
+        ]
+
+        let sessions = SessionBuilder.buildSessions(from: snapshots)
+
+        #expect(sessions.count == 1)
+        #expect(sessions[0].activity == "Trace")
+    }
+
+    @Test func splitsUnrelatedAppsFromWorkSession() {
+        let base = Date(timeIntervalSince1970: 1_700_000_000)
+        let snapshots = [
+            snapshot(id: 1, at: base, title: "Trace — TraceApp.swift",
+                     url: "file:///Users/dev/Trace/Trace/TraceApp.swift"),
+            snapshot(id: 2, at: base.addingTimeInterval(60), title: "Pune",
+                     bundle: "com.apple.weather", appName: "Weather"),
+            snapshot(id: 3, at: base.addingTimeInterval(240), title: "INTC",
+                     bundle: "com.apple.stocks", appName: "Stocks"),
+            snapshot(id: 4, at: base.addingTimeInterval(360), title: "Trace — TimelineView.swift",
+                     url: "file:///Users/dev/Trace/Trace/Views/TimelineView.swift"),
+        ]
+
+        let sessions = SessionBuilder.buildSessions(from: snapshots)
+
+        #expect(sessions.count == 2)
+        #expect(sessions[0].activity == "Trace")
+        #expect(sessions[1].apps.contains { $0.appName == "Weather" || $0.appName == "Stocks" })
+    }
+
+    @Test func keepsXcodeSettingsPanesInWorkSession() {
+        let base = Date(timeIntervalSince1970: 1_700_000_000)
+        let snapshots = [
+            snapshot(id: 1, at: base, title: "Trace — TraceApp.swift",
+                     url: "file:///Users/dev/Trace/Trace/TraceApp.swift"),
+            snapshot(id: 2, at: base.addingTimeInterval(60), title: "Source Control"),
+            snapshot(id: 3, at: base.addingTimeInterval(90), title: "Intelligence"),
+            snapshot(id: 4, at: base.addingTimeInterval(120), title: "General"),
+            snapshot(id: 5, at: base.addingTimeInterval(180), title: "Trace — TimelineView.swift",
+                     url: "file:///Users/dev/Trace/Trace/Views/TimelineView.swift"),
+        ]
+
+        let sessions = SessionBuilder.buildSessions(from: snapshots)
+
+        #expect(sessions.count == 1)
+        #expect(sessions[0].activity == "Trace")
+    }
+
+    @Test func foldsBriefDetourIntoWorkSession() {
+        let base = Date(timeIntervalSince1970: 1_700_000_000)
+        let snapshots = [
+            snapshot(id: 1, at: base, title: "Trace — TraceApp.swift",
+                     url: "file:///Users/dev/Trace/Trace/TraceApp.swift"),
+            snapshot(id: 2, at: base.addingTimeInterval(60), title: "Pune",
+                     bundle: "com.apple.weather", appName: "Weather"),
+            snapshot(id: 3, at: base.addingTimeInterval(90), title: "INTC",
+                     bundle: "com.apple.stocks", appName: "Stocks"),
             snapshot(id: 4, at: base.addingTimeInterval(150), title: "Trace — TimelineView.swift",
                      url: "file:///Users/dev/Trace/Trace/Views/TimelineView.swift"),
         ]
@@ -123,6 +198,7 @@ struct SessionBuilderTests {
 
         #expect(sessions.count == 1)
         #expect(sessions[0].activity == "Trace")
+        #expect(sessions[0].apps.contains { $0.appName == "Weather" })
     }
 
     @Test func ignoresTransientUnrelatedGlance() {
@@ -435,6 +511,25 @@ struct SessionAppDisplayTests {
 
         #expect(SessionAppDisplay.displayLines(for: chrome).isEmpty)
         #expect(!SessionAppDisplay.shouldShowInDetail(chrome))
+    }
+
+    @Test func hidesConversationURLsWhenChatTitleExists() {
+        let claude = app(
+            bundleId: "com.anthropic.claude",
+            appName: "Claude",
+            titles: ["Fix session splitting — Claude"],
+            urls: ["https://claude.ai/chat/123e4567-e89b-12d3-a456-426614174000"]
+        )
+        let lines = SessionAppDisplay.displayLines(for: claude)
+        #expect(lines.map(\.text) == ["Fix session splitting"])
+
+        let untitled = app(
+            bundleId: "com.anthropic.claude",
+            appName: "Claude",
+            titles: [],
+            urls: ["https://claude.ai/chat/123e4567-e89b-12d3-a456-426614174000"]
+        )
+        #expect(!SessionAppDisplay.displayLines(for: untitled).isEmpty)
     }
 
     @Test func ranksPrimaryAppFirst() {
