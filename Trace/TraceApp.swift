@@ -19,3 +19,29 @@ struct TraceApp: App {
         }
     }
 }
+
+/// Root alert for unrecoverable database errors.
+struct DatabaseErrorAlert: ViewModifier {
+    @Environment(AppState.self) private var appState
+
+    func body(content: Content) -> some View {
+        @Bindable var appState = appState
+        content
+            .alert(
+                "Database Error",
+                isPresented: .init(
+                    get: { appState.databaseError != nil },
+                    set: { if !$0 { appState.databaseError = nil } }
+                )
+            ) {
+                Button("Reset Database", role: .destructive) {
+                    appState.resetDatabase()
+                }
+                Button("Quit") {
+                    NSApplication.shared.terminate(nil)
+                }
+            } message: {
+                Text(appState.databaseError ?? "An unknown error occurred.")
+            }
+    }
+}

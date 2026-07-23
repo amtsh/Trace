@@ -8,26 +8,35 @@ final class AppState {
     var hasCompletedOnboarding: Bool
     var hasAccessibilityPermission: Bool
     var lastPollDate: Date = .now
+    var databaseError: String? = nil
     private(set) var hiddenSessionIds: Set<String>
 
-    private let database: SnapshotDatabase
-    private let tracker: ActivityTracker
+    private let database: SnapshotDatabase?
+    private let tracker: ActivityTracker?
     private let restorer = RestoreService()
     private let summarizer = SummaryService()
 
     init() {
-        let db = try! SnapshotDatabase()
-        self.database = db
-        self.tracker = ActivityTracker(database: db)
         self.hasCompletedOnboarding = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
         self.hiddenSessionIds = Set(UserDefaults.standard.stringArray(forKey: "hiddenSessionIds") ?? [])
         self.hasAccessibilityPermission = PermissionManager.hasAccessibilityPermission
 
-        tracker.onPollCompleted = { [weak self] in
+        do {
+            let db = try SnapshotDatabase()
+            self.database = db
+            self.tracker = ActivityTracker(database: db)
+        } catch {
+            self.database = nil
+            self.tracker = nil
+            self.databaseError = error.localizedDescription
+            return
+        }
+
+        tracker!.onPollCompleted = { [weak self] in
             Task { @MainActor in self?.lastPollDate = .now }
         }
 
-        tracker.onSnapshotCaptured = { [weak self] in
+        tracker!.onSnapshotCaptured = { [weak self] in
             Task { @MainActor in
                 await self?.refreshIfStale()
             }
@@ -35,13 +44,14 @@ final class AppState {
 
         Task {
             await pruneAndLoad()
-            tracker.start()
+            tracker!.start()
         }
     }
 
     // MARK: - Public
 
     func refreshTimeline() async {
+        guard let database else { return }
         refreshGeneration += 1
         let generation = refreshGeneration
 
@@ -54,7 +64,6 @@ final class AppState {
             }
             var initial = built.filter { !$0.apps.isEmpty }
 
-            // Carry over existing summaries so the UI never flashes to empty
             let existingSummaries = Dictionary(
                 uniqueKeysWithValues: sessions.compactMap { s in s.summary.map { (s.id, $0) } }
             )
@@ -65,8 +74,6 @@ final class AppState {
             guard generation == refreshGeneration else { return }
             self.sessions = initial
 
-            // Only (re)generate summaries for recent sessions or those still missing one.
-            // Older closed sessions are stable — their summary is already cached on disk.
             let recentCutoff = Date().addingTimeInterval(-30 * 60)
             for session in initial where session.summary == nil || session.endTime > recentCutoff {
                 let summary = await summarizer.summarize(
@@ -125,16 +132,25 @@ final class AppState {
     }
 
     func toggleTracking() {
-        if isTracking { tracker.stop() } else { tracker.start() }
+        if isTracking { tracker?.stop() } else { tracker?.start() }
         isTracking.toggle()
     }
 
     func wipeAllData() async {
-        tracker.stop()
+        guard let database else { return }
+        tracker?.stop()
         try? await database.pruneOlderThan(Date.distantFuture)
         sessions = []
-        tracker.start()
+        tracker?.start()
         isTracking = true
+    }
+
+    func resetDatabase() {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let dbURL = appSupport.appendingPathComponent("Trace/trace.db")
+        try? FileManager.default.removeItem(at: dbURL)
+        databaseError = nil
+        NSApplication.shared.terminate(nil)
     }
 
     // MARK: - Private
@@ -149,6 +165,7 @@ final class AppState {
     }
 
     private func pruneAndLoad() async {
+        guard let database else { return }
         let cutoff = Calendar.current.date(byAdding: .day, value: -7, to: Date())!
         try? await database.pruneOlderThan(cutoff)
         pruneHiddenIds(before: cutoff)
