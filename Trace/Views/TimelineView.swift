@@ -6,6 +6,7 @@ struct TimelineView: View {
     @State private var showStats = false
     @State private var showMenu = false
     @State private var visibleCount = 10
+    @State private var cachedDayGroups: [DayGroup] = []
 
     private static let pageSize = 10
 
@@ -22,6 +23,7 @@ struct TimelineView: View {
         }
         .task {
             await appState.refreshTimeline()
+            rebuildDayGroups()
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(DS.Poll.timelineRefreshSeconds))
                 await appState.refreshTimeline()
@@ -29,6 +31,9 @@ struct TimelineView: View {
         }
         .onAppear {
             appState.checkAccessibility()
+        }
+        .onChange(of: appState.sessions.map(\.id)) {
+            rebuildDayGroups()
         }
         .onChange(of: appState.panelPresentationGeneration) {
             resetForPresentation()
@@ -287,7 +292,7 @@ struct TimelineView: View {
     // MARK: - Pagination
 
     private var totalSessionCount: Int {
-        dayGroups.reduce(0) { $0 + $1.sessions.count }
+        cachedDayGroups.reduce(0) { $0 + $1.sessions.count }
     }
 
     private var hasMoreSessions: Bool {
@@ -298,7 +303,7 @@ struct TimelineView: View {
         visibleCount += Self.pageSize
     }
 
-    private var dayGroups: [DayGroup] {
+    private func rebuildDayGroups() {
         let sorted = appState.sessions.sorted { $0.startTime > $1.startTime }
         var groups: [DayGroup] = []
         var currentKey = ""
@@ -321,13 +326,13 @@ struct TimelineView: View {
         if !currentSessions.isEmpty {
             groups.append(DayGroup(key: currentKey, label: currentLabel, sessions: currentSessions))
         }
-        return groups
+        cachedDayGroups = groups
     }
 
     private var pagedDayGroups: [DayGroup] {
         var remaining = visibleCount
         var result: [DayGroup] = []
-        for group in dayGroups {
+        for group in cachedDayGroups {
             guard remaining > 0 else { break }
             if group.sessions.count <= remaining {
                 result.append(group)
