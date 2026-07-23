@@ -50,14 +50,31 @@ struct SessionCardView: View {
         !(isSingleApp && !hasRichDetail) && !listApps.isEmpty
     }
 
-    private var reopenLabel: String {
-        if isSingleApp, let app = primaryApp {
-            return "Reopen \(app.appName)"
+    var body: some View {
+        if isHidden {
+            hiddenPill
+        } else {
+            card
         }
-        return "Reopen session"
     }
 
-    var body: some View {
+    private var hiddenPill: some View {
+        Button {
+            appState.setSession(session, hidden: false)
+        } label: {
+            Text("Hidden activity")
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 7)
+                .background(VisualEffectBackground())
+                .clipShape(Capsule())
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var card: some View {
         VStack(alignment: .leading, spacing: 0) {
             // NC-style collapsed header: large icon left, content right
             HStack(alignment: .top, spacing: 12) {
@@ -77,7 +94,7 @@ struct SessionCardView: View {
                             .foregroundStyle(.secondary)
                         Image(systemName: "chevron.right")
                             .font(.system(size: 9, weight: .bold))
-                            .foregroundStyle(.quaternary)
+                            .foregroundStyle(.secondary)
                             .rotationEffect(.degrees(isExpanded ? 90 : 0))
                     }
 
@@ -125,23 +142,6 @@ struct SessionCardView: View {
                     .padding(.horizontal, 14)
 
                 VStack(alignment: .leading, spacing: 10) {
-                    Button {
-                        Task { await restoreSession() }
-                    } label: {
-                        if isRestoring {
-                            ProgressView()
-                                .controlSize(.small)
-                                .frame(maxWidth: .infinity)
-                        } else {
-                            Label(reopenLabel, systemImage: "arrow.uturn.backward")
-                                .font(.caption.weight(.medium))
-                                .frame(maxWidth: .infinity)
-                        }
-                    }
-                    .buttonStyle(.glassProminent)
-                    .controlSize(.small)
-                    .disabled(isRestoring)
-
                     if let restoreMessage {
                         Text(restoreMessage)
                             .font(.caption2)
@@ -158,23 +158,29 @@ struct SessionCardView: View {
                                 AppDetailRow(
                                     app: app,
                                     session: session,
-                                    showOpenAction: !isSingleApp
+                                    showOpenAction: true
                                 )
                                 if app.id != listApps.last?.id {
                                     Divider().padding(.leading, 36)
                                 }
                             }
                         }
-                    } else if isSingleApp, let app = primaryApp {
-                        Button {
-                            appState.openApp(bundleId: app.bundleId)
-                        } label: {
-                            Label("Open \(app.appName)", systemImage: "arrow.up.forward.app")
-                                .font(.caption.weight(.medium))
-                                .frame(maxWidth: .infinity)
+                    } else {
+                        HStack {
+                            Spacer()
+                            Button {
+                                Task { await restoreSession() }
+                            } label: {
+                                if isRestoring {
+                                    ProgressView().controlSize(.mini)
+                                } else {
+                                    Image(systemName: "arrow.up.right")
+                                        .font(.system(size: 11, weight: .medium))
+                                }
+                            }
+                            .foregroundStyle(.secondary)
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.glass)
-                        .controlSize(.small)
                     }
                 }
                 .padding(14)
@@ -189,38 +195,29 @@ struct SessionCardView: View {
                     .padding(.bottom, 10)
             }
         }
-        .background {
-            ZStack {
-                VisualEffectBackground()
-                Color.black.opacity(0.42)
-                if isHovering {
-                    Color.white.opacity(0.05)
+        .glassEffect(in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .shadow(color: .black.opacity(0.35), radius: 8, x: 0, y: 4)
+        .overlay(alignment: .topTrailing) {
+            if isHovering {
+                Button {
+                    withAnimation(.smooth(duration: 0.2)) {
+                        appState.setSession(session, hidden: true)
+                    }
+                } label: {
+                    Image(systemName: "eye.slash")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 20, height: 20)
+                        .background(VisualEffectBackground())
+                        .clipShape(Circle())
                 }
+                .buttonStyle(.plain)
+                .padding(8)
+                .transition(.opacity.combined(with: .scale(scale: 0.8)))
             }
         }
-        .overlay {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(
-                    LinearGradient(
-                        colors: [Color.white.opacity(0.22), Color.white.opacity(0.04)],
-                        startPoint: .top, endPoint: .bottom
-                    ),
-                    lineWidth: 0.5
-                )
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .shadow(color: .black.opacity(0.35), radius: 8, x: 0, y: 4)
         .onHover { hovering in
             withAnimation(.smooth(duration: 0.15)) { isHovering = hovering }
-        }
-        .opacity(isHidden ? 0.45 : 1)
-        .contextMenu {
-            Button {
-                appState.setSession(session, hidden: !isHidden)
-            } label: {
-                Label(isHidden ? "Show Row" : "Hide Row",
-                      systemImage: isHidden ? "eye" : "eye.slash")
-            }
         }
     }
 
@@ -246,7 +243,6 @@ struct AppDetailRow: View {
 
     @Environment(AppState.self) private var appState
     @State private var isRestoring = false
-    @State private var isRowHovered = false
 
     private var displayLines: [SessionAppDisplay.Line] {
         SessionAppDisplay.contextLines(for: app)
@@ -285,6 +281,7 @@ struct AppDetailRow: View {
                     }
                 }
             }
+            .frame(minHeight: 24, alignment: .leading)
 
             Spacer()
 
@@ -296,14 +293,13 @@ struct AppDetailRow: View {
                         ProgressView()
                             .controlSize(.mini)
                     } else {
-                        Text("Open")
+                        Image(systemName: "arrow.up.right")
+                            .font(.system(size: 11, weight: .medium))
                     }
                 }
-                .font(.caption.weight(.medium))
                 .foregroundStyle(.secondary)
                 .buttonStyle(.plain)
                 .disabled(isRestoring)
-                .opacity(isRowHovered || isRestoring ? 1 : 0)
                 .help(SessionAppDisplay.hasRestorableContent(app)
                       ? "Reopen \(app.appName) with its tabs and documents"
                       : "Open \(app.appName)")
@@ -311,9 +307,6 @@ struct AppDetailRow: View {
         }
         .padding(.vertical, 6)
         .contentShape(Rectangle())
-        .onHover { hovering in
-            withAnimation(.smooth(duration: 0.15)) { isRowHovered = hovering }
-        }
     }
 
     private func openWithState() async {

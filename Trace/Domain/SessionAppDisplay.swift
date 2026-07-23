@@ -127,11 +127,15 @@ enum SessionAppDisplay {
         let filteredURLs = app.urls.filter { !isNoiseURL($0) }
 
         if app.bundleId == xcodeBundle {
-            appendTitleLines(
-                filteredTitles.filter { looksLikeFile($0) },
-                to: &lines,
-                seen: &seen
-            )
+            if let project = inferredProject(for: app) {
+                lines.append(Line(id: "xcode-project-\(project)", text: project, isPath: false))
+            } else {
+                appendTitleLines(
+                    filteredTitles.filter { looksLikeFile($0) },
+                    to: &lines,
+                    seen: &seen
+                )
+            }
         } else if isEditor(app.bundleId) {
             for url in filteredURLs.sorted(by: pathSortPriority) {
                 guard let line = pathLine(from: url), !isProjectBundleName(line.text),

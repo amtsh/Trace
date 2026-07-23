@@ -11,8 +11,6 @@ struct TimelineView: View {
                 }
             } else {
                 sessionList
-                    .safeAreaInset(edge: .top, spacing: 0) { header }
-                    .scrollEdgeEffectStyle(.soft, for: .top)
             }
         }
         .task {
@@ -47,7 +45,7 @@ struct TimelineView: View {
             }
             Spacer()
             Menu {
-                Toggle(appState.isTracking ? "Tracking is ON" : "Tracking is OFF", isOn: .init(
+                Toggle(appState.isTracking ? "Tracking is ON" : "Turn ON Tracking", isOn: .init(
                     get: { appState.isTracking },
                     set: { _ in appState.toggleTracking() }
                 ))
@@ -60,19 +58,17 @@ struct TimelineView: View {
                     NSApplication.shared.terminate(nil)
                 }
             } label: {
-                Image(systemName: "ellipsis")
-                    .font(.callout.weight(.semibold))
-                    .frame(width: 28, height: 28)
-                    .background(VisualEffectBackground())
-                    .clipShape(Circle())
-                    .contentShape(Circle())
+                Text("Menu")
+                    .font(.caption.weight(.medium))
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 7)
+                    .glassEffect(in: Capsule())
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
         }
-        .padding(.horizontal, 18)
-        .padding(.top, 18)
+        .padding(.top, 8)
         .padding(.bottom, 10)
     }
 
@@ -100,7 +96,6 @@ struct TimelineView: View {
             .padding(.vertical, 20)
             .background(VisualEffectBackground())
             .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .padding(.horizontal, 14)
             .padding(.top, 4)
 
             Spacer()
@@ -112,12 +107,13 @@ struct TimelineView: View {
     private var sessionList: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 8) {
+                header
+
                 ForEach(dayGroups, id: \.label) { group in
                     if group.label != "Today" {
                         Text(group.label)
                             .font(.title3.weight(.bold))
                             .shadow(color: .black.opacity(0.4), radius: 3, y: 1)
-                            .padding(.horizontal, 6)
                             .padding(.top, 10)
                     }
 
@@ -125,40 +121,9 @@ struct TimelineView: View {
                         SessionCardView(session: session)
                     }
                 }
-
-                if appState.hiddenSessionCount > 0 {
-                    hiddenRowsFooter
-                }
             }
-            .padding(.horizontal, 14)
             .padding(.bottom, 16)
         }
-    }
-
-    private var hiddenRowsFooter: some View {
-        Button {
-            withAnimation(.easeInOut(duration: 0.2)) {
-                appState.showHiddenSessions.toggle()
-            }
-        } label: {
-            HStack(spacing: 5) {
-                Image(systemName: appState.showHiddenSessions ? "eye" : "eye.slash")
-                let count = appState.hiddenSessionCount
-                Text(appState.showHiddenSessions
-                     ? "Hide \(count) hidden \(count == 1 ? "row" : "rows")"
-                     : "Show \(count) hidden \(count == 1 ? "row" : "rows")")
-            }
-            .font(.caption.weight(.medium))
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 7)
-            .background(VisualEffectBackground())
-            .clipShape(Capsule())
-            .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
-        .frame(maxWidth: .infinity)
-        .padding(.top, 6)
     }
 
     // MARK: - Day grouping
@@ -169,7 +134,7 @@ struct TimelineView: View {
         var currentLabel = ""
         var currentSessions: [Session] = []
 
-        for session in appState.visibleSessions {
+        for session in appState.sessions {
             let key = dayKey(session.startTime)
             if key != currentKey {
                 if !currentSessions.isEmpty {

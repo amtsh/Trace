@@ -8,7 +8,6 @@ final class AppState {
     var hasCompletedOnboarding: Bool
     var hasAccessibilityPermission: Bool
     var lastPollDate: Date = .now
-    var showHiddenSessions = false
     private(set) var hiddenSessionIds: Set<String>
 
     private let database: SnapshotDatabase
@@ -53,14 +52,23 @@ final class AppState {
             for i in built.indices {
                 built[i].apps = built[i].apps.filter { !ActivityTracker.ignoredBundles.contains($0.bundleId) }
             }
-            let initial = built.filter { !$0.apps.isEmpty }
-            guard generation == refreshGeneration else { return }
+            var initial = built.filter { !$0.apps.isEmpty }
 
-            // Phase 1: show sessions immediately with rule-based subtitles
+            // Carry over existing summaries so the UI never flashes to empty
+            let existingSummaries = Dictionary(
+                uniqueKeysWithValues: sessions.compactMap { s in s.summary.map { (s.id, $0) } }
+            )
+            for i in initial.indices {
+                initial[i].summary = existingSummaries[initial[i].id]
+            }
+
+            guard generation == refreshGeneration else { return }
             self.sessions = initial
 
-            // Phase 2: enrich each session's subtitle with a Foundation Models phrase
-            for session in initial {
+            // Only (re)generate summaries for recent sessions or those still missing one.
+            // Older closed sessions are stable — their summary is already cached on disk.
+            let recentCutoff = Date().addingTimeInterval(-30 * 60)
+            for session in initial where session.summary == nil || session.endTime > recentCutoff {
                 let summary = await summarizer.summarize(
                     apps: session.apps,
                     durationMinutes: session.durationMinutes
@@ -73,14 +81,6 @@ final class AppState {
         } catch {
             // Keep existing sessions on failure
         }
-    }
-
-    var visibleSessions: [Session] {
-        showHiddenSessions ? sessions : sessions.filter { !hiddenSessionIds.contains($0.id) }
-    }
-
-    var hiddenSessionCount: Int {
-        sessions.filter { hiddenSessionIds.contains($0.id) }.count
     }
 
     func isSessionHidden(_ session: Session) -> Bool {
