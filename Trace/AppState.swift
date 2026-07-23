@@ -10,6 +10,7 @@ final class AppState {
     var lastPollDate: Date = .now
     var databaseError: String? = nil
     private(set) var hiddenSessionIds: Set<String>
+    private(set) var summarizingSessionIds: Set<String> = []
 
     private let database: SnapshotDatabase?
     private let tracker: ActivityTracker?
@@ -76,10 +77,20 @@ final class AppState {
 
             let recentCutoff = Date().addingTimeInterval(-30 * 60)
             for session in initial where session.summary == nil || session.endTime > recentCutoff {
+                let needsSummary = session.summary == nil
+                if needsSummary {
+                    summarizingSessionIds.insert(session.id)
+                }
+
                 let summary = await summarizer.summarize(
                     apps: session.apps,
                     durationMinutes: session.durationMinutes
                 )
+
+                if needsSummary {
+                    summarizingSessionIds.remove(session.id)
+                }
+
                 guard generation == refreshGeneration, !summary.isEmpty else { continue }
                 if let idx = self.sessions.firstIndex(where: { $0.id == session.id }) {
                     self.sessions[idx].summary = summary
@@ -92,6 +103,10 @@ final class AppState {
 
     func isSessionHidden(_ session: Session) -> Bool {
         hiddenSessionIds.contains(session.id)
+    }
+
+    func isSummarizingSession(_ session: Session) -> Bool {
+        summarizingSessionIds.contains(session.id)
     }
 
     func setSession(_ session: Session, hidden: Bool) {

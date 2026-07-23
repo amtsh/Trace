@@ -54,12 +54,12 @@ enum SessionDisplay {
     static func timeRangeLabel(for session: Session) -> String? {
         guard shouldShowTimeRange(for: session) else { return nil }
         let fmt = Date.FormatStyle().hour().minute()
-        return "\(session.startTime.formatted(fmt)) \u2013 \(session.endTime.formatted(fmt))"
+        return "\(session.startTime.formatted(fmt)) – \(session.endTime.formatted(fmt))"
     }
 
     static func timeRangeWithDurationLabel(for session: Session) -> String? {
         guard let range = timeRangeLabel(for: session) else { return nil }
-        return "\(range) \u00b7 \(durationLabel(for: session))"
+        return "\(range) · \(durationLabel(for: session))"
     }
 
     static func shouldShowAppTimeShares(for session: Session) -> Bool {

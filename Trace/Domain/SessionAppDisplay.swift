@@ -37,7 +37,13 @@ enum SessionAppDisplay {
     ]
 
     static func isChatApp(_ bundleId: String) -> Bool {
-        chatAppSuffixes[bundleId] != nil
+        chatAppSuffixes[bundleId] != nil || bundleId.hasPrefix("ai.perplexity")
+    }
+
+    private static func chatSuffixes(for bundleId: String) -> [String]? {
+        if let suffixes = chatAppSuffixes[bundleId] { return suffixes }
+        if bundleId.hasPrefix("ai.perplexity") { return ["Perplexity"] }
+        return nil
     }
 
     static func rankedApps(_ apps: [SessionApp]) -> [SessionApp] {
@@ -109,7 +115,7 @@ enum SessionAppDisplay {
             }
         }
         for url in app.urls where url.hasPrefix("file://") {
-            if let project = projectFromFileURL(url) {
+            if let project = SessionBuilder.projectFromFileURL(url) {
                 return project
             }
         }
@@ -187,18 +193,21 @@ enum SessionAppDisplay {
         "Cursor", "Visual Studio Code", "Code",
     ]
 
-    private static let genericDirs: Set<String> = [
-        "users", "home", "developer", "documents", "desktop",
-        "downloads", "projects", "repos", "workspace", "workspaces",
-        "src", "lib", "app", "sources", "tests", "test", "spec",
-        "build", "dist", "out", "bin", "cmd", "internal", "pkg",
-        "vendor", "node_modules", "packages", "target",
-    ]
-
     private static func projectFromTitle(_ title: String, bundleId: String) -> String? {
         let emParts = title.components(separatedBy: " — ")
-        if emParts.count >= 2, let last = emParts.last?.trimmingCharacters(in: .whitespaces), !last.isEmpty {
-            if !looksLikeSourceFile(last) { return last }
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+
+        if emParts.count >= 2 {
+            if let last = emParts.last, !looksLikeSourceFile(last) {
+                return last
+            }
+            if let first = emParts.first, !looksLikeSourceFile(first) {
+                return first
+            }
+            for part in emParts where part.hasSuffix(".xcodeproj") || part.hasSuffix(".xcworkspace") {
+                return normalizeProjectName(part)
+            }
         }
 
         let hyphenParts = title.components(separatedBy: " - ")
@@ -215,25 +224,6 @@ enum SessionAppDisplay {
             }
         }
 
-        return nil
-    }
-
-    private static func projectFromFileURL(_ urlString: String) -> String? {
-        var path = String(urlString.dropFirst("file://".count))
-        if let decoded = path.removingPercentEncoding { path = decoded }
-        let components = path.components(separatedBy: "/").filter { !$0.isEmpty && $0 != "~" }
-        guard components.count >= 2 else { return nil }
-
-        var dirs = components
-        if let last = dirs.last, last.contains(".") && !last.hasPrefix(".") {
-            dirs.removeLast()
-        }
-
-        for dir in dirs.reversed() {
-            if !genericDirs.contains(dir.lowercased()) && !dir.hasPrefix(".") {
-                return dir
-            }
-        }
         return nil
     }
 
@@ -257,7 +247,7 @@ enum SessionAppDisplay {
 
         if trimmed.lowercased() == appName.lowercased() { return trimmed }
 
-        if let suffixes = chatAppSuffixes[bundleId] {
+        if let suffixes = chatSuffixes(for: bundleId) {
             for sep in [" — ", " – ", " - ", " | "] {
                 let parts = trimmed.components(separatedBy: sep)
                     .map { $0.trimmingCharacters(in: .whitespaces) }

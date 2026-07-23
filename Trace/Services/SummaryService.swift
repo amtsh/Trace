@@ -51,12 +51,12 @@ enum SummaryPrompt {
             }
         }
 
-        var prompt = "Summarize this \(durationMinutes)-minute work session in one short phrase (5\u201310 words, no period).\n\n"
+        var prompt = "Summarize this \(durationMinutes)-minute work session in one short phrase (5–10 words, no period).\n\n"
 
         if !contextLines.isEmpty {
             prompt += "Context (files, titles, tabs):\n"
             for item in contextLines {
-                prompt += "  \u2022 [\(item.app)] \(item.line)\n"
+                prompt += "  • [\(item.app)] \(item.line)\n"
             }
         } else {
             // No rich context — fall back to app list so model has something
@@ -107,7 +107,7 @@ enum SummaryPrompt {
 
     static func truncate(_ text: String, max: Int) -> String {
         guard text.count > max else { return text }
-        return String(text.prefix(max - 1)) + "\u2026"
+        return String(text.prefix(max - 1)) + "…"
     }
 }
 

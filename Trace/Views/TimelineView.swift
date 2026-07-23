@@ -71,7 +71,7 @@ struct TimelineView: View {
                         )
                     )
                     Divider()
-                    Button("Clear All Data\u2026", role: .destructive) {
+                    Button("Clear All Data…", role: .destructive) {
                         showClearConfirmation = true
                     }
                     Divider()
@@ -155,8 +155,10 @@ struct TimelineView: View {
                     }
                 }
             }
+            .padding(.horizontal, DS.Spacing.lg)
             .padding(.bottom, DS.Spacing.xxl)
         }
+        .scrollIndicators(.hidden)
     }
 
     // MARK: - Day grouping

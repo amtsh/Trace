@@ -149,21 +149,19 @@ final class ActivityTracker {
 
         if PermissionManager.hasAccessibilityPermission {
             let axApp = AXUIElementCreateApplication(frontApp.processIdentifier)
-            windowTitle = axWindowAttribute(axApp, kAXTitleAttribute as String)
-            documentURL = axWindowAttribute(axApp, kAXDocumentAttribute as String)
+            windowTitle = sanitized(axWindowAttribute(axApp, kAXTitleAttribute as String))
+            documentURL = sanitized(axWindowAttribute(axApp, kAXDocumentAttribute as String))
 
-            if windowTitle == nil || windowTitle == appName {
-                windowTitle = bestWindowTitle(axApp, appName: appName) ?? windowTitle
+            if !isMeaningfulTitle(windowTitle, appName: appName) {
+                windowTitle = sanitized(bestWindowTitle(axApp, appName: appName)) ?? windowTitle
             }
 
-            if windowTitle == nil || windowTitle == appName {
-                if let contentTitle = webContentTitle(axApp) {
-                    windowTitle = contentTitle
-                }
+            if !isMeaningfulTitle(windowTitle, appName: appName) {
+                windowTitle = sanitized(webContentTitle(axApp))
             }
 
-            if documentURL == nil, Self.chatBundles.contains(bundleId) {
-                documentURL = webContentURL(axApp)
+            if documentURL == nil, Self.isChatBundle(bundleId) {
+                documentURL = sanitized(webContentURL(axApp))
             }
         }
 
@@ -194,6 +192,21 @@ final class ActivityTracker {
     }
 
     // MARK: - Accessibility helpers
+
+    private func sanitized(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private func isMeaningfulTitle(_ title: String?, appName: String) -> Bool {
+        guard let title = sanitized(title) else { return false }
+        return title.caseInsensitiveCompare(appName) != .orderedSame
+    }
+
+    static func isChatBundle(_ bundleId: String) -> Bool {
+        chatBundles.contains(bundleId) || bundleId.hasPrefix("ai.perplexity")
+    }
 
     private func axWindowAttribute(_ app: AXUIElement, _ attr: String) -> String? {
         var window: AnyObject?
@@ -334,6 +347,7 @@ final class ActivityTracker {
         "com.anthropic.claudefordesktop",
         "com.openai.chat",
         "ai.perplexity.mac",
+        "ai.perplexity.macv3",
     ]
 
     private func browserURL(bundleId: String) -> String? {

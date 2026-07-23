@@ -204,15 +204,23 @@ enum SessionBuilder {
         "vendor", "node_modules", "packages", "target",
     ]
 
+    private static let sourceSubdirs: Set<String> = [
+        "views", "view", "models", "model", "services", "service",
+        "controllers", "controller", "resources", "assets",
+        "preview content", "extensions", "utils", "utilities",
+        "helpers", "components", "screens", "features", "domain",
+        "data", "networking", "ui", "supporting files",
+    ]
+
     static func extractProject(from snapshot: Snapshot) -> String? {
+        if snapshot.appBundle == xcodeBundle, let title = snapshot.windowTitle, !title.isEmpty {
+            if let project = projectFromXcodeTitle(title, documentURL: snapshot.documentURL) { return project }
+        }
         if let url = snapshot.documentURL, url.hasPrefix("file://") {
             if let project = projectFromFileURL(url) { return project }
         }
         if let url = snapshot.documentURL {
             if let project = projectFromGitHubURL(url) { return project }
-        }
-        if snapshot.appBundle == xcodeBundle, let title = snapshot.windowTitle, !title.isEmpty {
-            if let project = projectFromXcodeTitle(title, documentURL: snapshot.documentURL) { return project }
         }
         if terminalBundles.contains(snapshot.appBundle), let title = snapshot.windowTitle, !title.isEmpty {
             if let project = projectFromTerminalTitle(title) { return project }
@@ -246,15 +254,25 @@ enum SessionBuilder {
     static func projectFromPath(_ path: String) -> String? {
         let components = path.components(separatedBy: "/")
             .filter { !$0.isEmpty && $0 != "~" }
-        guard components.count >= 2 else { return nil }
+        guard !components.isEmpty else { return nil }
+
+        for component in components.reversed() {
+            if component.hasSuffix(".xcodeproj") || component.hasSuffix(".xcworkspace") {
+                return normalizeProjectName(component)
+            }
+        }
 
         var dirs = components
         if let last = dirs.last, last.contains(".") && !last.hasPrefix(".") {
             dirs.removeLast()
         }
+        guard dirs.count >= 1 else { return nil }
 
         for dir in dirs.reversed() {
-            if !genericDirs.contains(dir.lowercased()) && !dir.hasPrefix(".") {
+            let lower = dir.lowercased()
+            if !genericDirs.contains(lower),
+               !sourceSubdirs.contains(lower),
+               !dir.hasPrefix(".") {
                 return dir
             }
         }
@@ -262,7 +280,7 @@ enum SessionBuilder {
     }
 
     private static func projectFromXcodeTitle(_ title: String, documentURL: String?) -> String? {
-        let parts = title.components(separatedBy: " \u2014 ")
+        let parts = title.components(separatedBy: " — ")
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
 
@@ -285,7 +303,7 @@ enum SessionBuilder {
     }
 
     private static func projectFromTerminalTitle(_ title: String) -> String? {
-        for part in title.components(separatedBy: " \u2014 ") {
+        for part in title.components(separatedBy: " — ") {
             if let p = projectFromPath(part.trimmingCharacters(in: .whitespaces)) { return p }
         }
         if let colonIdx = title.firstIndex(of: ":") {
@@ -355,7 +373,10 @@ enum SessionBuilder {
                 titles[b] = []
                 urls[b] = []
             }
-            if let t = snap.windowTitle { titles[b]!.insert(t) }
+            if let t = snap.windowTitle {
+                let trimmed = t.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty { titles[b]!.insert(trimmed) }
+            }
             if let u = snap.documentURL { urls[b]!.insert(u) }
         }
 

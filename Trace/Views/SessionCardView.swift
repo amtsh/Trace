@@ -59,19 +59,30 @@ struct SessionCardView: View {
     }
 
     private var hiddenPill: some View {
-        Button {
-            appState.setSession(session, hidden: false)
-        } label: {
-            Text("Hidden activity")
-                .font(.caption.weight(.medium))
+        HStack {
+            Spacer(minLength: 0)
+            Button {
+                withAnimation(DS.Animation.hideButton) {
+                    appState.setSession(session, hidden: false)
+                }
+            } label: {
+                HStack(spacing: DS.Spacing.xs) {
+                    Image(systemName: "eye.slash")
+                        .font(.system(size: DS.IconSize.glyphSm, weight: .bold))
+                    Text("Hidden activity")
+                        .font(.caption.weight(.medium))
+                }
                 .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 7)
+                .padding(.horizontal, DS.Spacing.md)
+                .padding(.vertical, DS.Spacing.xs)
                 .background(VisualEffectBackground())
                 .clipShape(Capsule())
                 .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            Spacer(minLength: 0)
         }
-        .buttonStyle(.plain)
+        .padding(.horizontal, DS.Spacing.lg)
     }
 
     private var card: some View {
@@ -87,6 +98,21 @@ struct SessionCardView: View {
                         Text(sessionTitle)
                             .font(.body.weight(.bold))
                             .lineLimit(1)
+
+                        if isHovering {
+                            Button {
+                                withAnimation(DS.Animation.hideButton) {
+                                    appState.setSession(session, hidden: true)
+                                }
+                            } label: {
+                                Text("Hide")
+                                    .font(.caption.weight(.medium))
+                                    .foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .transition(.opacity)
+                        }
+
                         Spacer()
                         Text(SessionDisplay.relativeTimeLabel(for: session))
                             .font(.callout)
@@ -97,7 +123,9 @@ struct SessionCardView: View {
                             .rotationEffect(.degrees(isExpanded ? 90 : 0))
                     }
 
-                    if let summary = displaySummary {
+                    if appState.isSummarizingSession(session), session.summary == nil {
+                        SummaryLoadingDots()
+                    } else if let summary = displaySummary {
                         Text(summary)
                             .font(.callout)
                             .foregroundStyle(.secondary)
@@ -194,25 +222,6 @@ struct SessionCardView: View {
             x: 0,
             y: DS.Shadow.cardY
         )
-        .overlay(alignment: .topLeading) {
-            if isHovering {
-                Button {
-                    withAnimation(DS.Animation.hideButton) {
-                        appState.setSession(session, hidden: true)
-                    }
-                } label: {
-                    Image(systemName: "eye.slash")
-                        .font(.system(size: DS.IconSize.glyphSm, weight: .bold))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 20, height: 20)
-                        .background(VisualEffectBackground())
-                        .clipShape(Circle())
-                }
-                .buttonStyle(.plain)
-                .offset(x: -8, y: -8)
-                .transition(.opacity.combined(with: .scale(scale: 0.8)))
-            }
-        }
         .onHover { hovering in
             withAnimation(DS.Animation.hover) { isHovering = hovering }
         }
@@ -228,6 +237,30 @@ struct SessionCardView: View {
         let result = await appState.restoreSession(session)
         isRestoring = false
         restoreMessage = RestoreFeedback.message(for: result)
+    }
+}
+
+// MARK: - Summary loading
+
+private struct SummaryLoadingDots: View {
+    var body: some View {
+        SwiftUI.TimelineView(.periodic(from: .now, by: 0.18)) { context in
+            let time = context.date.timeIntervalSinceReferenceDate
+            HStack(spacing: 4) {
+                ForEach(0..<3, id: \.self) { index in
+                    Circle()
+                        .fill(Color.secondary.opacity(0.45))
+                        .frame(width: 4, height: 4)
+                        .opacity(opacity(for: index, time: time))
+                }
+            }
+        }
+        .accessibilityLabel("Generating summary")
+    }
+
+    private func opacity(for index: Int, time: TimeInterval) -> Double {
+        let wave = sin(time * 2.8 + Double(index) * 0.9)
+        return 0.25 + 0.65 * ((wave + 1) / 2)
     }
 }
 
@@ -329,7 +362,7 @@ enum RestoreFeedback {
 
         if opened == 0 && failed > 0 {
             let prefix = appName.map { "Couldn't reopen \($0)" } ?? "Couldn't reopen session"
-            return "\(prefix) \u2014 \(result.failed[0].reason)"
+            return "\(prefix) — \(result.failed[0].reason)"
         }
         if failed == 0 {
             let prefix = appName.map { "Reopened \($0)" } ?? "Reopened session"
@@ -337,7 +370,7 @@ enum RestoreFeedback {
             return prefix + detail
         }
         let prefix = appName.map { "Reopened \($0)" } ?? "Reopened session"
-        return "\(prefix) \u2014 \(opened) opened, \(failed) couldn't"
+        return "\(prefix) — \(opened) opened, \(failed) couldn't"
     }
 }
 

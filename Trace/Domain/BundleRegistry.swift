@@ -49,6 +49,7 @@ struct BundleRegistry {
             "com.anthropic.claudefordesktop",
             "com.openai.chat",
             "ai.perplexity.mac",
+            "ai.perplexity.macv3",
         ],
         ignored: [
             "com.apple.UserNotificationCenter",

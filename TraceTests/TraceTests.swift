@@ -59,6 +59,31 @@ struct SessionBuilderTests {
         #expect(sessions[0].durationMinutes == 2)
     }
 
+    @Test func prefersXcodeProjectNameOverFolderName() {
+        let path = "/Users/dev/xcode/Trace/Trace/Views/TimelineView.swift"
+        #expect(SessionBuilder.projectFromPath(path) == "Trace")
+
+        let projectURL = "file:///Users/dev/xcode/Trace/Trace.xcodeproj"
+        #expect(SessionBuilder.projectFromFileURL(projectURL) == "Trace")
+    }
+
+    @Test func extractsProjectFromXcodeTitleWhenFileIsInSourceSubdir() {
+        let base = Date(timeIntervalSince1970: 1_700_000_000)
+        let snapshots = [
+            snapshot(
+                id: 1,
+                at: base,
+                title: "Trace — SessionCardView.swift",
+                url: "file:///Users/dev/xcode/Trace/Trace/Views/SessionCardView.swift"
+            ),
+        ]
+
+        let sessions = SessionBuilder.buildSessions(from: snapshots)
+
+        #expect(sessions.count == 1)
+        #expect(sessions[0].activity == "Trace")
+    }
+
     @Test func splitsDifferentProjectsEvenInSameApp() {
         let base = Date(timeIntervalSince1970: 1_700_000_000)
         let snapshots = [
@@ -498,6 +523,38 @@ struct SessionAppDisplayTests {
         )
         let line = SessionAppDisplay.bestDisplayLine(for: xcode)
         #expect(line?.text == "TraceApp.swift")
+    }
+
+    @Test func inferredProjectPrefersXcodeProjectOverFolder() {
+        let xcode = app(
+            titles: ["Trace — SessionCardView.swift"],
+            urls: ["file:///Users/dev/xcode/Trace/Trace/Views/SessionCardView.swift"]
+        )
+
+        #expect(SessionAppDisplay.inferredProject(for: xcode) == "Trace")
+    }
+
+    @Test func showsPerplexityQueryFromMacV3Bundle() {
+        let perplexity = app(
+            bundleId: "ai.perplexity.macv3",
+            appName: "Perplexity",
+            titles: ["ElevenLabs pronunciation — Perplexity"],
+            urls: ["https://www.perplexity.ai/search/elevenlabs-pronunciation"]
+        )
+
+        let lines = SessionAppDisplay.displayLines(for: perplexity)
+        #expect(lines.map(\.text) == ["ElevenLabs pronunciation"])
+    }
+
+    @Test func showsStockTickerAsContext() {
+        let stocks = app(
+            bundleId: "com.apple.stocks",
+            appName: "Stocks",
+            titles: ["INTC"],
+            count: 2
+        )
+
+        #expect(SessionAppDisplay.displayLines(for: stocks).map(\.text) == ["INTC"])
     }
 
     @Test func filtersNoiseTitles() {
