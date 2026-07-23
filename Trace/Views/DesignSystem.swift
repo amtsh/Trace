@@ -91,9 +91,19 @@ enum DS {
         /// Hide-button appear/disappear
         static let hideButton: SwiftUI.Animation = .smooth(duration: 0.2)
         /// Sidebar slide-in
-        static let panelShow: Double = 0.25
+        static let panelShow: Double = 0.42
         /// Sidebar slide-out
-        static let panelHide: Double = 0.2
+        static let panelHide: Double = 0.34
+        /// Swipe cancel snap-back
+        static let panelSnapBack: Double = 0.28
+        /// Minimum slide-out duration (e.g. after partial swipe)
+        static let panelHideMinimum: Double = 0.26
+    }
+
+    // MARK: Header
+    enum Header {
+        /// Shared height for pills, close button, and title row alignment
+        static let controlHeight: CGFloat = 26
     }
 
     // MARK: Shadow
@@ -110,7 +120,7 @@ enum DS {
     enum Sidebar {
         static let width: CGFloat = 380
         static let edgeMargin: CGFloat = 12
-        static let panelShowDelay: TimeInterval = 0.1
+        static let panelShowDelay: TimeInterval = 0.05
     }
 
     // MARK: Polling

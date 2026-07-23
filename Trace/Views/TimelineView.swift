@@ -31,7 +31,10 @@ struct TimelineView: View {
             appState.checkAccessibility()
         }
         .onChange(of: appState.panelPresentationGeneration) {
-            visibleCount = Self.pageSize
+            resetForPresentation()
+        }
+        .onChange(of: showMenu) {
+            appState.isHeaderMenuOpen = showMenu
         }
         .confirmationDialog(
             "Clear All Data?",
@@ -46,41 +49,52 @@ struct TimelineView: View {
         }
     }
 
+    private func resetForPresentation() {
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            visibleCount = Self.pageSize
+            showMenu = false
+            showStats = false
+        }
+    }
+
     // MARK: - Header
 
     private var header: some View {
         VStack(spacing: 0) {
-            HStack(spacing: DS.Spacing.md) {
-                HStack(spacing: DS.Spacing.sm) {
-                    Text("Trace")
-                        .font(.title.weight(.bold))
-                        .shadow(
-                            color: .black.opacity(DS.Opacity.shadowText),
-                            radius: DS.Shadow.textRadius,
-                            y: DS.Shadow.textY
-                        )
-
-                    if !appState.sessions.isEmpty {
-                        statsToggle
+            HStack(alignment: .center, spacing: DS.Spacing.md) {
+                Text("Trace")
+                    .font(.title.weight(.bold))
+                    .shadow(
+                        color: .black.opacity(DS.Opacity.shadowText),
+                        radius: DS.Shadow.textRadius,
+                        y: DS.Shadow.textY
+                    )
+                    .alignmentGuide(VerticalAlignment.center) { dimensions in
+                        dimensions[VerticalAlignment.center] - 1
                     }
-                }
 
                 if !appState.isTracking {
                     Text("Paused")
                         .font(.caption2.weight(.medium))
                         .foregroundStyle(.orange)
-                        .padding(.horizontal, DS.Spacing.sm)
-                        .padding(.vertical, 3)
+                        .headerControl(height: DS.Header.controlHeight)
                         .background(VisualEffectBackground())
                         .clipShape(Capsule())
                 }
 
-                Spacer()
+                Spacer(minLength: 0)
 
-                headerMenu
-
-                dismissButton
+                HStack(alignment: .center, spacing: DS.Spacing.xs) {
+                    if !appState.sessions.isEmpty {
+                        statsToggle
+                    }
+                    headerMenu
+                    dismissButton
+                }
             }
+            .frame(minHeight: DS.Header.controlHeight)
             .padding(.top, DS.Spacing.sm)
             .padding(.bottom, DS.Spacing.md)
 
@@ -156,7 +170,7 @@ struct TimelineView: View {
             Image(systemName: "xmark")
                 .font(.system(size: 10, weight: .bold))
                 .foregroundStyle(.secondary)
-                .frame(width: 26, height: 26)
+                .frame(width: DS.Header.controlHeight, height: DS.Header.controlHeight)
                 .background(VisualEffectBackground())
                 .clipShape(Circle())
         }
@@ -169,8 +183,7 @@ struct TimelineView: View {
         Text(title)
             .font(.caption.weight(.medium))
             .foregroundStyle(.secondary)
-            .padding(.horizontal, DS.Spacing.sm)
-            .padding(.vertical, 3)
+            .headerControl(height: DS.Header.controlHeight)
             .background(VisualEffectBackground())
             .clipShape(Capsule())
     }
@@ -196,50 +209,56 @@ struct TimelineView: View {
     // MARK: - Session list
 
     private var sessionList: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: DS.Spacing.sm) {
-                header
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: DS.Spacing.sm) {
+                    header
+                        .id("timelineTop")
 
-                if showStats {
-                    StatsView()
-                } else {
-                    ForEach(pagedDayGroups) { group in
-                        if group.label != "Today" {
-                            Text(group.label)
-                                .font(.title3.weight(.bold))
-                                .shadow(
-                                    color: .black.opacity(DS.Opacity.shadowText),
-                                    radius: DS.Shadow.textRadius,
-                                    y: DS.Shadow.textY
-                                )
-                                .padding(.top, DS.Spacing.md)
+                    if showStats {
+                        StatsView()
+                    } else {
+                        ForEach(pagedDayGroups) { group in
+                            if group.label != "Today" {
+                                Text(group.label)
+                                    .font(.title3.weight(.bold))
+                                    .shadow(
+                                        color: .black.opacity(DS.Opacity.shadowText),
+                                        radius: DS.Shadow.textRadius,
+                                        y: DS.Shadow.textY
+                                    )
+                                    .padding(.top, DS.Spacing.md)
+                            }
+
+                            ForEach(group.sessions) { session in
+                                SessionCardView(session: session)
+                            }
                         }
 
-                        ForEach(group.sessions) { session in
-                            SessionCardView(session: session)
+                        if hasMoreSessions {
+                            Button {
+                                loadMore()
+                            } label: {
+                                Text("Show more")
+                                    .font(.caption.weight(.medium))
+                                    .foregroundStyle(.secondary)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, DS.Spacing.sm)
+                            }
+                            .buttonStyle(.plain)
                         }
-                    }
-
-                    if hasMoreSessions {
-                        Button {
-                            loadMore()
-                        } label: {
-                            Text("Show more")
-                                .font(.caption.weight(.medium))
-                                .foregroundStyle(.secondary)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, DS.Spacing.sm)
-                        }
-                        .buttonStyle(.plain)
                     }
                 }
+                .padding(.horizontal, DS.Spacing.lg)
+                .padding(.bottom, DS.Spacing.xxl)
             }
-            .padding(.horizontal, DS.Spacing.lg)
-            .padding(.bottom, DS.Spacing.xxl)
+            .scrollIndicators(.hidden)
+            .scrollIndicatorsFlash(onAppear: false)
+            .onAppear { hideNSScrollViewIndicators() }
+            .onChange(of: appState.panelPresentationGeneration) {
+                proxy.scrollTo("timelineTop", anchor: .top)
+            }
         }
-        .scrollIndicators(.hidden)
-        .scrollIndicatorsFlash(onAppear: false)
-        .onAppear { hideNSScrollViewIndicators() }
     }
 
     private func hideNSScrollViewIndicators() {
@@ -319,6 +338,13 @@ struct TimelineView: View {
         if Calendar.current.isDateInToday(date) { return "Today" }
         if Calendar.current.isDateInYesterday(date) { return "Yesterday" }
         return date.formatted(.dateTime.weekday(.wide).month(.abbreviated).day())
+    }
+}
+
+private extension View {
+    func headerControl(height: CGFloat) -> some View {
+        frame(height: height)
+            .padding(.horizontal, DS.Spacing.sm)
     }
 }
 

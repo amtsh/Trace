@@ -24,10 +24,10 @@ final class SidebarPanelController {
             let t = max(0, min(progress, 1))
             switch self {
             case .easeIn:
-                return CGFloat(t * t * t)
+                return CGFloat(t * t * t * t * t)
             case .easeOut:
                 let u = 1 - t
-                return CGFloat(1 - u * u * u)
+                return CGFloat(1 - u * u * u * u * u)
             }
         }
     }
@@ -156,7 +156,7 @@ final class SidebarPanelController {
         let startFrame = panel.frame
         let startTime = CFAbsoluteTimeGetCurrent()
 
-        frameAnimationTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] timer in
+        frameAnimationTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 120.0, repeats: true) { [weak self] timer in
             guard let self, let panel = self.panel else {
                 timer.invalidate()
                 return
@@ -204,7 +204,7 @@ final class SidebarPanelController {
         let remainingDistance = endFrame.origin.x - panel.frame.origin.x
         let fullDistance = endFrame.origin.x - panelRestX
         let fraction = fullDistance > 0 ? remainingDistance / fullDistance : 1
-        let duration = max(DS.Animation.panelHide * fraction, 0.18)
+        let duration = max(DS.Animation.panelHide * fraction, DS.Animation.panelHideMinimum)
 
         animatePanelFrame(to: endFrame, duration: duration, easing: .easeIn) { [weak self] in
             panel.orderOut(nil)
@@ -216,7 +216,7 @@ final class SidebarPanelController {
         guard let panel else { return }
         var restFrame = panel.frame
         restFrame.origin.x = panelRestX
-        animatePanelFrame(to: restFrame, duration: 0.2, easing: .easeOut)
+        animatePanelFrame(to: restFrame, duration: DS.Animation.panelSnapBack, easing: .easeOut)
     }
 
     private func finishDismiss() {
@@ -253,6 +253,7 @@ final class SidebarPanelController {
         ) { [weak self] _ in
             DispatchQueue.main.async {
                 guard let self, self.isOpen, let panel = self.panel else { return }
+                if self.appState?.isHeaderMenuOpen == true { return }
                 if !panel.frame.contains(NSEvent.mouseLocation) {
                     self.hide()
                 }

@@ -11,6 +11,7 @@ final class AppState {
     var expandedSessionId: String?
     var databaseError: String? = nil
     private(set) var panelPresentationGeneration = 0
+    var isHeaderMenuOpen = false
     private(set) var hiddenSessionIds: Set<String>
     private(set) var summarizingSessionIds: Set<String> = []
 
@@ -106,6 +107,13 @@ final class AppState {
 
     func panelDidPresent() {
         panelPresentationGeneration += 1
+        isHeaderMenuOpen = false
+
+        let defaultExpanded = sessions
+            .sorted { $0.startTime > $1.startTime }
+            .first(where: { !hiddenSessionIds.contains($0.id) })
+
+        expandedSessionId = defaultExpanded?.id
     }
 
     func isSessionHidden(_ session: Session) -> Bool {
