@@ -893,8 +893,8 @@ struct StatsBuilderTests {
     }
 
     @Test func todayAndWeekTotalsSumDurations() {
-        let now = Date()
         let calendar = Calendar.current
+        let now = calendar.date(bySettingHour: 14, minute: 0, second: 0, of: Date())!
         let earlierToday = calendar.date(byAdding: .hour, value: -2, to: now)!
         let twoDaysAgo = calendar.date(byAdding: .day, value: -2, to: now)!
 

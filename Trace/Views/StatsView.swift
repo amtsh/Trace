@@ -3,19 +3,17 @@ import SwiftUI
 struct StatsView: View {
     @Environment(AppState.self) private var appState
 
-    private var stats: TimelineStats {
-        StatsBuilder.build(from: appState.sessions)
-    }
-
     var body: some View {
-        let stats = stats
+        let stats = StatsBuilder.build(from: appState.sessions)
         VStack(alignment: .leading, spacing: DS.Spacing.sm) {
             overviewCard(stats)
             dailyCard(stats)
             if !stats.topProjects.isEmpty {
                 projectsCard(stats)
             }
-            focusCard(stats)
+            if stats.deepWorkCount > 0 || stats.averageFocusStars != nil {
+                focusCard(stats)
+            }
         }
     }
 
