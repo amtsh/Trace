@@ -4,8 +4,6 @@ import SwiftUI
 final class SidebarPanelController {
     static let shared = SidebarPanelController()
 
-    static let width: CGFloat = 380
-
     private var appState: AppState?
     private var panel: NSPanel?
     private var hostingView: NSHostingView<SidebarRootView>?
@@ -42,7 +40,7 @@ final class SidebarPanelController {
         let startFrame = NSRect(
             x: visible.maxX,
             y: endFrame.minY,
-            width: Self.width,
+            width: DS.Sidebar.width,
             height: endFrame.height
         )
 
@@ -62,9 +60,6 @@ final class SidebarPanelController {
             newPanel.hidesOnDeactivate = false
             newPanel.isReleasedWhenClosed = false
 
-            // Create the hosting view once. Pass appState via .environment() so
-            // @Observable propagates all updates automatically — we never replace
-            // the root view, preserving SwiftUI state (scroll position, expanded cards).
             let root = SidebarRootView(appState: appState)
             let hv = NSHostingView(rootView: root)
             hv.frame = NSRect(origin: .zero, size: endFrame.size)
@@ -83,15 +78,13 @@ final class SidebarPanelController {
         removeEventMonitors()
         panel.setFrame(startFrame, display: false)
         panel.orderFrontRegardless()
-        // Do NOT call NSApp.activate — the panel uses .nonactivatingPanel intentionally
-        // to avoid stealing keyboard focus from the user's active app.
 
         NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = 0.25
+            ctx.duration = DS.Animation.panelShow
             ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
             panel.animator().setFrame(endFrame, display: true)
         } completionHandler: { [weak self] in
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + DS.Sidebar.panelShowDelay) {
                 guard self?.isOpen == true else { return }
                 self?.installEventMonitors()
             }
@@ -105,7 +98,7 @@ final class SidebarPanelController {
         removeEventMonitors()
 
         NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = 0.2
+            ctx.duration = DS.Animation.panelHide
             ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
             panel.animator().setFrameOrigin(
                 NSPoint(x: screen.visibleFrame.maxX, y: panel.frame.minY)
@@ -121,11 +114,11 @@ final class SidebarPanelController {
 
     private func panelFrame(on screen: NSScreen) -> NSRect {
         let visible = screen.visibleFrame
-        let margin: CGFloat = 12
+        let margin = DS.Sidebar.edgeMargin
         return NSRect(
-            x: visible.maxX - Self.width - margin,
+            x: visible.maxX - DS.Sidebar.width - margin,
             y: visible.minY + margin,
-            width: Self.width,
+            width: DS.Sidebar.width,
             height: visible.height - margin * 2
         )
     }
@@ -133,7 +126,9 @@ final class SidebarPanelController {
     private func installEventMonitors() {
         removeEventMonitors()
 
-        clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+        clickMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown]
+        ) { [weak self] _ in
             DispatchQueue.main.async {
                 guard let self, self.isOpen, let panel = self.panel else { return }
                 if !panel.frame.contains(NSEvent.mouseLocation) {
@@ -173,8 +168,13 @@ private struct SidebarRootView: View {
             } else {
                 OnboardingView()
                     .background(VisualEffectBackground())
-                    .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-                    .padding(12)
+                    .clipShape(
+                        RoundedRectangle(
+                            cornerRadius: DS.Radius.panel,
+                            style: .continuous
+                        )
+                    )
+                    .padding(DS.Sidebar.edgeMargin)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

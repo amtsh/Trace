@@ -76,14 +76,14 @@ struct SessionCardView: View {
 
     private var card: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .top, spacing: 12) {
+            HStack(alignment: .top, spacing: DS.Spacing.lg) {
                 if let app = primaryApp {
-                    AppIconBadge(app: app, size: 40)
+                    AppIconBadge(app: app, size: DS.IconSize.primary)
                         .padding(.top, 1)
                 }
 
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(alignment: .center, spacing: 6) {
+                VStack(alignment: .leading, spacing: DS.Spacing.xxs) {
+                    HStack(alignment: .center, spacing: DS.Spacing.xs) {
                         Text(sessionTitle)
                             .font(.body.weight(.bold))
                             .lineLimit(1)
@@ -92,7 +92,7 @@ struct SessionCardView: View {
                             .font(.callout)
                             .foregroundStyle(.secondary)
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 9, weight: .bold))
+                            .font(.system(size: DS.IconSize.chevron, weight: .bold))
                             .foregroundStyle(.secondary)
                             .rotationEffect(.degrees(isExpanded ? 90 : 0))
                     }
@@ -105,12 +105,12 @@ struct SessionCardView: View {
                     }
 
                     if !secondaryApps.isEmpty {
-                        HStack(spacing: 5) {
-                            ForEach(secondaryApps.prefix(5)) { app in
-                                AppIconBadge(app: app, size: 18)
+                        HStack(spacing: DS.Spacing.xs) {
+                            ForEach(secondaryApps.prefix(DS.Card.maxSecondaryIcons)) { app in
+                                AppIconBadge(app: app, size: DS.IconSize.secondary)
                             }
-                            if secondaryApps.count > 5 {
-                                Text("+\(secondaryApps.count - 5)")
+                            if secondaryApps.count > DS.Card.maxSecondaryIcons {
+                                Text("+\(secondaryApps.count - DS.Card.maxSecondaryIcons)")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
@@ -126,11 +126,11 @@ struct SessionCardView: View {
                     }
                 }
             }
-            .padding(14)
+            .padding(DS.Spacing.xl)
             .contentShape(Rectangle())
             .onTapGesture {
                 guard !session.apps.isEmpty else { return }
-                withAnimation(.smooth(duration: 0.25)) {
+                withAnimation(DS.Animation.cardExpand) {
                     isExpanded.toggle()
                     if !isExpanded { restoreMessage = nil }
                 }
@@ -138,9 +138,9 @@ struct SessionCardView: View {
 
             if isExpanded {
                 Divider()
-                    .padding(.horizontal, 14)
+                    .padding(.horizontal, DS.Spacing.xl)
 
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: DS.Spacing.md) {
                     if let restoreMessage {
                         Text(restoreMessage)
                             .font(.caption2)
@@ -150,7 +150,7 @@ struct SessionCardView: View {
                     if showAppList {
                         Text("Apps in this session")
                             .font(.caption.weight(.semibold))
-                            .foregroundStyle(Color.white.opacity(0.55))
+                            .foregroundStyle(Color.white.opacity(DS.Opacity.sectionLabel))
 
                         VStack(spacing: 0) {
                             ForEach(listApps) { app in
@@ -170,12 +170,11 @@ struct SessionCardView: View {
                             Button {
                                 Task { await restoreSession() }
                             } label: {
-                                // Show spinner only — restoreMessage (if any) is displayed above.
                                 if isRestoring {
                                     ProgressView().controlSize(.mini)
                                 } else {
                                     Image(systemName: "arrow.up.right")
-                                        .font(.system(size: 11, weight: .medium))
+                                        .font(.system(size: DS.IconSize.glyphMd, weight: .medium))
                                 }
                             }
                             .foregroundStyle(.secondary)
@@ -184,22 +183,26 @@ struct SessionCardView: View {
                         }
                     }
                 }
-                .padding(14)
+                .padding(DS.Spacing.xl)
                 .transition(.blurReplace)
             }
-            // Accessibility warning removed from here — shown once in TimelineView header instead.
         }
-        .glassEffect(in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .shadow(color: .black.opacity(0.35), radius: 8, x: 0, y: 4)
+        .glassEffect(in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+        .shadow(
+            color: .black.opacity(DS.Opacity.shadowCard),
+            radius: DS.Shadow.cardRadius,
+            x: 0,
+            y: DS.Shadow.cardY
+        )
         .overlay(alignment: .topLeading) {
             if isHovering {
                 Button {
-                    withAnimation(.smooth(duration: 0.2)) {
+                    withAnimation(DS.Animation.hideButton) {
                         appState.setSession(session, hidden: true)
                     }
                 } label: {
                     Image(systemName: "eye.slash")
-                        .font(.system(size: 8, weight: .bold))
+                        .font(.system(size: DS.IconSize.glyphSm, weight: .bold))
                         .foregroundStyle(.secondary)
                         .frame(width: 20, height: 20)
                         .background(VisualEffectBackground())
@@ -211,7 +214,7 @@ struct SessionCardView: View {
             }
         }
         .onHover { hovering in
-            withAnimation(.smooth(duration: 0.15)) { isHovering = hovering }
+            withAnimation(DS.Animation.hover) { isHovering = hovering }
         }
     }
 
@@ -221,7 +224,7 @@ struct SessionCardView: View {
 
     private func restoreSession() async {
         isRestoring = true
-        restoreMessage = nil  // clear before starting so no stale message during restore
+        restoreMessage = nil
         let result = await appState.restoreSession(session)
         isRestoring = false
         restoreMessage = RestoreFeedback.message(for: result)
@@ -247,11 +250,11 @@ struct AppDetailRow: View {
     }
 
     var body: some View {
-        HStack(alignment: .center, spacing: 10) {
-            AppIconBadge(app: app, size: 24)
+        HStack(alignment: .center, spacing: DS.Spacing.md) {
+            AppIconBadge(app: app, size: DS.IconSize.detail)
 
             VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 6) {
+                HStack(spacing: DS.Spacing.xs) {
                     Text(app.appName)
                         .font(.callout.weight(.medium))
                     if let timeShare {
@@ -262,20 +265,24 @@ struct AppDetailRow: View {
                 }
 
                 if !displayLines.isEmpty {
-                    ForEach(displayLines.prefix(3)) { line in
+                    ForEach(displayLines.prefix(DS.Card.maxContextLines)) { line in
                         Text(line.text)
                             .font(.caption)
-                            .foregroundStyle(line.isPath ? Color.blue.opacity(0.9) : Color.white.opacity(0.6))
+                            .foregroundStyle(
+                                line.isPath
+                                    ? Color.blue.opacity(0.9)
+                                    : Color.white.opacity(DS.Opacity.contextLine)
+                            )
                             .lineLimit(1)
                     }
-                    if displayLines.count > 3 {
-                        Text("+\(displayLines.count - 3) more")
+                    if displayLines.count > DS.Card.maxContextLines {
+                        Text("+\(displayLines.count - DS.Card.maxContextLines) more")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
                 }
             }
-            .frame(minHeight: 24, alignment: .leading)
+            .frame(minHeight: DS.IconSize.detail, alignment: .leading)
 
             Spacer()
 
@@ -284,22 +291,23 @@ struct AppDetailRow: View {
                     Task { await openWithState() }
                 } label: {
                     if isRestoring {
-                        ProgressView()
-                            .controlSize(.mini)
+                        ProgressView().controlSize(.mini)
                     } else {
                         Image(systemName: "arrow.up.right")
-                            .font(.system(size: 11, weight: .medium))
+                            .font(.system(size: DS.IconSize.glyphMd, weight: .medium))
                     }
                 }
                 .foregroundStyle(.secondary)
                 .buttonStyle(.plain)
                 .disabled(isRestoring)
-                .help(SessionAppDisplay.hasRestorableContent(app)
-                      ? "Reopen \(app.appName) with its tabs and documents"
-                      : "Open \(app.appName)")
+                .help(
+                    SessionAppDisplay.hasRestorableContent(app)
+                        ? "Reopen \(app.appName) with its tabs and documents"
+                        : "Open \(app.appName)"
+                )
             }
         }
-        .padding(.vertical, 6)
+        .padding(.vertical, DS.Spacing.xs)
         .contentShape(Rectangle())
     }
 
@@ -333,12 +341,11 @@ enum RestoreFeedback {
     }
 }
 
-// MARK: - App icon
+// MARK: - App icon badge
 
 struct AppIconBadge: View {
     let app: SessionApp
     var size: CGFloat = 20
-    /// Icon loaded asynchronously off the main thread to avoid blocking scroll.
     @State private var icon: NSImage? = nil
 
     var body: some View {
@@ -347,7 +354,12 @@ struct AppIconBadge: View {
                 Image(nsImage: icon)
                     .resizable()
                     .frame(width: size, height: size)
-                    .clipShape(RoundedRectangle(cornerRadius: size * 0.22, style: .continuous))
+                    .clipShape(
+                        RoundedRectangle(
+                            cornerRadius: size * DS.Radius.iconBadgeFactor,
+                            style: .continuous
+                        )
+                    )
             } else {
                 Image(systemName: "app.fill")
                     .font(.system(size: size * 0.7))

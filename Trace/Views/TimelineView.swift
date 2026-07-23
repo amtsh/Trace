@@ -18,14 +18,13 @@ struct TimelineView: View {
         .task {
             await appState.refreshTimeline()
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(30))
+                try? await Task.sleep(for: .seconds(DS.Poll.timelineRefreshSeconds))
                 await appState.refreshTimeline()
             }
         }
         .onAppear {
             appState.checkAccessibility()
         }
-        // Consistent destructive confirmation using SwiftUI, not NSAlert.runModal()
         .confirmationDialog(
             "Clear All Data?",
             isPresented: $showClearConfirmation,
@@ -43,27 +42,34 @@ struct TimelineView: View {
 
     private var header: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 10) {
+            HStack(spacing: DS.Spacing.md) {
                 Text("Trace")
                     .font(.title.weight(.bold))
-                    .shadow(color: .black.opacity(0.4), radius: 3, y: 1)
+                    .shadow(
+                        color: .black.opacity(DS.Opacity.shadowText),
+                        radius: DS.Shadow.textRadius,
+                        y: DS.Shadow.textY
+                    )
                 if appState.isTracking {
                     PollCountdownRing(lastPoll: appState.lastPollDate)
                 } else {
                     Text("Paused")
                         .font(.caption2.weight(.medium))
                         .foregroundStyle(.orange)
-                        .padding(.horizontal, 8)
+                        .padding(.horizontal, DS.Spacing.sm)
                         .padding(.vertical, 3)
                         .background(VisualEffectBackground())
                         .clipShape(Capsule())
                 }
                 Spacer()
                 Menu {
-                    Toggle(appState.isTracking ? "Tracking is ON" : "Turn ON Tracking", isOn: .init(
-                        get: { appState.isTracking },
-                        set: { _ in appState.toggleTracking() }
-                    ))
+                    Toggle(
+                        appState.isTracking ? "Tracking is ON" : "Turn ON Tracking",
+                        isOn: .init(
+                            get: { appState.isTracking },
+                            set: { _ in appState.toggleTracking() }
+                        )
+                    )
                     Divider()
                     Button("Clear All Data\u2026", role: .destructive) {
                         showClearConfirmation = true
@@ -75,20 +81,19 @@ struct TimelineView: View {
                 } label: {
                     Text("Menu")
                         .font(.caption.weight(.medium))
-                        .foregroundStyle(.white.opacity(0.75))
-                        .padding(.horizontal, 14)
+                        .foregroundStyle(.white.opacity(DS.Opacity.menuLabel))
+                        .padding(.horizontal, DS.Spacing.xl)
                         .padding(.vertical, 7)
-                        .background(Color.black.opacity(0.55))
+                        .background(Color.black.opacity(DS.Opacity.menuBg))
                         .clipShape(Capsule())
                 }
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
                 .fixedSize()
             }
-            .padding(.top, 8)
-            .padding(.bottom, 10)
+            .padding(.top, DS.Spacing.sm)
+            .padding(.bottom, DS.Spacing.md)
 
-            // Single accessibility warning — shown once here, not per-card.
             if !appState.hasAccessibilityPermission {
                 Button {
                     appState.requestAccessibility()
@@ -97,13 +102,13 @@ struct TimelineView: View {
                         .font(.caption2)
                         .foregroundStyle(.orange)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(Color.orange.opacity(0.12))
-                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .padding(.horizontal, DS.Spacing.md)
+                        .padding(.vertical, DS.Spacing.xs)
+                        .background(Color.orange.opacity(DS.Opacity.accessoryBannerBg))
+                        .clipShape(RoundedRectangle(cornerRadius: DS.Radius.sm, style: .continuous))
                 }
                 .buttonStyle(.plain)
-                .padding(.bottom, 6)
+                .padding(.bottom, DS.Spacing.xs)
             }
         }
     }
@@ -119,8 +124,8 @@ struct TimelineView: View {
             }
             .padding(.vertical, 20)
             .background(VisualEffectBackground())
-            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .padding(.top, 4)
+            .clipShape(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+            .padding(.top, DS.Spacing.xxs)
 
             Spacer()
         }
@@ -130,15 +135,19 @@ struct TimelineView: View {
 
     private var sessionList: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 8) {
+            LazyVStack(alignment: .leading, spacing: DS.Spacing.sm) {
                 header
 
                 ForEach(dayGroups, id: \.label) { group in
                     if group.label != "Today" {
                         Text(group.label)
                             .font(.title3.weight(.bold))
-                            .shadow(color: .black.opacity(0.4), radius: 3, y: 1)
-                            .padding(.top, 10)
+                            .shadow(
+                                color: .black.opacity(DS.Opacity.shadowText),
+                                radius: DS.Shadow.textRadius,
+                                y: DS.Shadow.textY
+                            )
+                            .padding(.top, DS.Spacing.md)
                     }
 
                     ForEach(group.sessions) { session in
@@ -146,17 +155,14 @@ struct TimelineView: View {
                     }
                 }
             }
-            .padding(.bottom, 16)
+            .padding(.bottom, DS.Spacing.xxl)
         }
     }
 
     // MARK: - Day grouping
 
     private var dayGroups: [DayGroup] {
-        // Explicit sort: newest first, so grouping is always correct
-        // regardless of the order sessions arrive from AppState.
         let sorted = appState.sessions.sorted { $0.startTime > $1.startTime }
-
         var groups: [DayGroup] = []
         var currentKey = ""
         var currentLabel = ""
@@ -198,24 +204,25 @@ private struct DayGroup {
     let sessions: [Session]
 }
 
-/// Countdown ring showing time until next poll.
-/// Uses a single `TimelineView` that only runs while tracking is active,
-/// avoiding a constant 1Hz redraw when the panel is hidden but hosting view persists.
 private struct PollCountdownRing: View {
     let lastPoll: Date
-    private let interval: TimeInterval = 30
 
     var body: some View {
         SwiftUI.TimelineView(.periodic(from: .now, by: 1)) { context in
             let elapsed = context.date.timeIntervalSince(lastPoll)
-            let remaining = max(0, 1.0 - elapsed / interval)
+            let remaining = max(0, 1.0 - elapsed / DS.Poll.intervalSeconds)
 
             Circle()
                 .trim(from: 0, to: remaining)
-                .stroke(style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
+                .stroke(
+                    style: StrokeStyle(
+                        lineWidth: DS.Poll.ringLineWidth,
+                        lineCap: .round
+                    )
+                )
                 .foregroundStyle(.tertiary)
                 .rotationEffect(.degrees(-90))
-                .frame(width: 10, height: 10)
+                .frame(width: DS.IconSize.ring, height: DS.IconSize.ring)
                 .animation(.linear(duration: 1), value: remaining)
         }
     }

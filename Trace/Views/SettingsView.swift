@@ -68,7 +68,7 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 420, height: 380)
+        .frame(width: DS.Settings.windowWidth, height: DS.Settings.windowHeight)
         .onAppear {
             appState.checkAccessibility()
             loadUnrecognizedApps()
