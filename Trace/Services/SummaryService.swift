@@ -17,8 +17,8 @@ enum SummaryPrompt {
         var maxLineLength: Int
 
         static let standard = Budget(maxApps: 3, maxLinesPerApp: 3, maxLineLength: 80)
-        static let compact = Budget(maxApps: 2, maxLinesPerApp: 2, maxLineLength: 50)
-        static let minimal = Budget(maxApps: 1, maxLinesPerApp: 2, maxLineLength: 40)
+        static let compact  = Budget(maxApps: 2, maxLinesPerApp: 2, maxLineLength: 50)
+        static let minimal  = Budget(maxApps: 1, maxLinesPerApp: 2, maxLineLength: 40)
 
         static let retrySequence: [Budget] = [.standard, .compact, .minimal]
     }
@@ -43,9 +43,7 @@ enum SummaryPrompt {
         let ranked = SessionAppDisplay.rankedApps(apps)
         var prompt = """
             Summarize this \(durationMinutes)-minute work session in one short phrase \
-            (5–10 words, no period).
-
-            """
+            (5–10 words, no period).\n\n"""
 
         for app in ranked.prefix(budget.maxApps) {
             let lines = SessionAppDisplay.contextLines(for: app).prefix(budget.maxLinesPerApp)
@@ -66,6 +64,13 @@ enum SummaryPrompt {
         return prompt
     }
 
+    /// Template fallback used when on-device LLM is unavailable.
+    static func fallback(apps: [SessionApp], durationMinutes: Int) -> String {
+        let ranked = SessionAppDisplay.rankedApps(apps)
+        let names = ranked.prefix(2).map(\.appName).joined(separator: ", ")
+        return "\(names) · \(durationMinutes) min"
+    }
+
     static func truncate(_ text: String, max: Int) -> String {
         guard text.count > max else { return text }
         return String(text.prefix(max - 1)) + "…"
@@ -73,11 +78,14 @@ enum SummaryPrompt {
 }
 
 actor SummaryService: Summarizer {
+    private static let cacheLimit = 200
+    private static let evictCount = 50
+    private static let cacheFileName = "summary-cache.json"
+
     private var cache: [String: String]
-    private static let userDefaultsKey = "summaryCache"
 
     init() {
-        self.cache = UserDefaults.standard.dictionary(forKey: Self.userDefaultsKey) as? [String: String] ?? [:]
+        self.cache = Self.loadCache()
     }
 
     func summarize(apps: [SessionApp], durationMinutes: Int) async -> String {
@@ -89,14 +97,52 @@ actor SummaryService: Summarizer {
         #if canImport(FoundationModels)
         if #available(macOS 26, *),
            let llm = await llmSummarize(apps: ranked, durationMinutes: durationMinutes) {
-            cache[key] = llm
-            UserDefaults.standard.set(cache, forKey: Self.userDefaultsKey)
+            store(key: key, value: llm)
             return llm
         }
         #endif
 
-        // No template fallback — builtInContext handles display when no summary
-        return ""
+        // Template fallback — always returns a non-empty string
+        let fallback = SummaryPrompt.fallback(apps: ranked, durationMinutes: durationMinutes)
+        store(key: key, value: fallback)
+        return fallback
+    }
+
+    // MARK: - Cache persistence
+
+    private func store(key: String, value: String) {
+        cache[key] = value
+        if cache.count > Self.cacheLimit {
+            let sorted = cache.keys.sorted()
+            sorted.prefix(Self.evictCount).forEach { cache.removeValue(forKey: $0) }
+        }
+        Self.saveCache(cache)
+    }
+
+    private static func cacheFileURL() -> URL? {
+        FileManager.default
+            .urls(for: .applicationSupportDirectory, in: .userDomainMask)
+            .first?
+            .appendingPathComponent("Trace/\(cacheFileName)")
+    }
+
+    private static func loadCache() -> [String: String] {
+        guard let url = cacheFileURL(),
+              let data = try? Data(contentsOf: url),
+              let decoded = try? JSONDecoder().decode([String: String].self, from: data)
+        else { return [:] }
+        return decoded
+    }
+
+    private static func saveCache(_ cache: [String: String]) {
+        guard let url = cacheFileURL(),
+              let data = try? JSONEncoder().encode(cache)
+        else { return }
+        try? FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try? data.write(to: url, options: .atomic)
     }
 
     // MARK: - Apple Foundation Models
@@ -125,9 +171,7 @@ actor SummaryService: Summarizer {
                     .trimmingCharacters(in: .whitespacesAndNewlines)
                 return text.isEmpty ? nil : text
             } catch let error as LanguageModelSession.GenerationError {
-                if case .exceededContextWindowSize = error {
-                    continue
-                }
+                if case .exceededContextWindowSize = error { continue }
                 return nil
             } catch {
                 return nil
