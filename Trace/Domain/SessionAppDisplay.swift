@@ -164,13 +164,14 @@ enum SessionAppDisplay {
         let filteredURLs = app.urls.filter { !isNoiseURL($0) }
 
         if app.bundleId == xcodeBundle {
-            appendTitleLines(
-                filteredTitles.filter { looksLikeFile($0) },
-                to: &lines,
-                seen: &seen
-            )
-            if lines.isEmpty, let project = inferredProject(for: app) {
+            if let project = inferredProject(for: app) {
                 lines.append(Line(id: "xcode-project-\(project)", text: project, isPath: false))
+            } else {
+                appendTitleLines(
+                    filteredTitles.filter { looksLikeFile($0) },
+                    to: &lines,
+                    seen: &seen
+                )
             }
         } else if isEditor(app.bundleId) {
             for url in filteredURLs.sorted(by: pathSortPriority) {
@@ -185,7 +186,10 @@ enum SessionAppDisplay {
                 for url in filteredURLs.sorted() {
                     let formatted = DisplayURL.format(url)
                     let key = formatted.lowercased()
-                    guard !seen.contains(where: { formatted.contains($0) || $0.contains(key) }) else { continue }
+                    guard !seen.contains(where: {
+                        formatted.localizedCaseInsensitiveContains($0)
+                            || $0.localizedCaseInsensitiveContains(key)
+                    }) else { continue }
                     guard seen.insert(key).inserted else { continue }
                     lines.append(Line(id: "url-\(key)", text: formatted, isPath: url.hasPrefix("file://")))
                 }
@@ -398,7 +402,13 @@ enum SessionAppDisplay {
             "cursor agents",
         ]
         if noisePatterns.contains(where: { lower.contains($0) }) { return true }
-        if lower == "settings" || lower == "preferences" { return true }
+
+        let exactNoise: Set<String> = [
+            "settings", "preferences", "new tab", "start page",
+            "untitled", "new window", "new document",
+        ]
+        if exactNoise.contains(lower) { return true }
+
         return false
     }
 

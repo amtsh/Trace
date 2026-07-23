@@ -9,8 +9,13 @@ final class SidebarPanelController {
     private var hostingView: NSHostingView<SidebarRootView>?
     private var clickMonitor: Any?
     private var keyMonitor: Any?
+    private var swipeMonitor: Any?
     private var activeScreen: NSScreen?
     private var isOpen = false
+    private var isDismissing = false
+    private var swipeAccumulated: CGFloat = 0
+    private var panelRestX: CGFloat = 0
+    private static let swipeDismissThreshold: CGFloat = 80
 
     private init() {}
 
@@ -79,6 +84,8 @@ final class SidebarPanelController {
         panel.setFrame(startFrame, display: false)
         panel.orderFrontRegardless()
 
+        panelRestX = endFrame.origin.x
+
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = DS.Animation.panelShow
             ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
@@ -92,25 +99,58 @@ final class SidebarPanelController {
     }
 
     func hide() {
-        guard isOpen, let panel, let screen = activeScreen else { return }
+        animateDismiss()
+    }
+
+    // MARK: - Private
+
+    private func animateDismiss() {
+        guard isOpen, !isDismissing, let panel, let screen = activeScreen else { return }
 
         isOpen = false
-        removeEventMonitors()
+        isDismissing = true
+        removeClickAndKeyMonitors()
+
+        let offScreenX = screen.visibleFrame.maxX
+        let remainingDistance = offScreenX - panel.frame.origin.x
+        let fullDistance = offScreenX - panelRestX
+        let fraction = fullDistance > 0 ? remainingDistance / fullDistance : 1
+        let duration = max(DS.Animation.panelHide * fraction, 0.18)
 
         NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = DS.Animation.panelHide
+            ctx.duration = duration
             ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
             panel.animator().setFrameOrigin(
-                NSPoint(x: screen.visibleFrame.maxX, y: panel.frame.minY)
+                NSPoint(x: offScreenX, y: panel.frame.minY)
             )
-        } completionHandler: {
+        } completionHandler: { [weak self] in
             DispatchQueue.main.async {
                 panel.orderOut(nil)
+                self?.finishDismiss()
             }
         }
     }
 
-    // MARK: - Private
+    private func animateSnapBack() {
+        guard let panel else { return }
+
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.2
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            panel.animator().setFrameOrigin(NSPoint(
+                x: panelRestX,
+                y: panel.frame.origin.y
+            ))
+        } completionHandler: { [weak self] in
+            self?.swipeAccumulated = 0
+        }
+    }
+
+    private func finishDismiss() {
+        isDismissing = false
+        swipeAccumulated = 0
+        removeSwipeMonitor()
+    }
 
     private func panelFrame(on screen: NSScreen) -> NSRect {
         let visible = screen.visibleFrame
@@ -144,9 +184,55 @@ final class SidebarPanelController {
             }
             return event
         }
+
+        swipeMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+            guard let self, let panel = self.panel else { return event }
+            if self.isDismissing { return nil }
+
+            guard self.isOpen else { return event }
+            guard event.hasPreciseScrollingDeltas else { return event }
+            guard panel.frame.contains(NSEvent.mouseLocation) else { return event }
+
+            let dx = event.scrollingDeltaX
+            let dy = event.scrollingDeltaY
+            let isTracking = self.swipeAccumulated > 0
+
+            if event.phase == .ended || event.phase == .cancelled, isTracking {
+                if self.swipeAccumulated >= Self.swipeDismissThreshold {
+                    self.animateDismiss()
+                } else {
+                    self.animateSnapBack()
+                }
+                return nil
+            }
+
+            if !isTracking {
+                guard dx > 0, abs(dx) > abs(dy) * 2 else { return event }
+            }
+
+            if dx < 0, isTracking {
+                self.swipeAccumulated = max(self.swipeAccumulated + dx, 0)
+                panel.setFrameOrigin(NSPoint(
+                    x: self.panelRestX + self.swipeAccumulated,
+                    y: panel.frame.origin.y
+                ))
+                return nil
+            }
+
+            if dx > 0 {
+                self.swipeAccumulated += dx
+                panel.setFrameOrigin(NSPoint(
+                    x: self.panelRestX + self.swipeAccumulated,
+                    y: panel.frame.origin.y
+                ))
+                return nil
+            }
+
+            return event
+        }
     }
 
-    private func removeEventMonitors() {
+    private func removeClickAndKeyMonitors() {
         if let clickMonitor {
             NSEvent.removeMonitor(clickMonitor)
             self.clickMonitor = nil
@@ -155,6 +241,20 @@ final class SidebarPanelController {
             NSEvent.removeMonitor(keyMonitor)
             self.keyMonitor = nil
         }
+    }
+
+    private func removeSwipeMonitor() {
+        if let swipeMonitor {
+            NSEvent.removeMonitor(swipeMonitor)
+            self.swipeMonitor = nil
+        }
+    }
+
+    private func removeEventMonitors() {
+        removeClickAndKeyMonitors()
+        removeSwipeMonitor()
+        swipeAccumulated = 0
+        isDismissing = false
     }
 }
 
@@ -179,6 +279,12 @@ private struct SidebarRootView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .environment(appState)
+    }
+}
+
+extension NSView {
+    var descendants: [NSView] {
+        subviews + subviews.flatMap(\.descendants)
     }
 }
 

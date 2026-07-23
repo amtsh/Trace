@@ -1,9 +1,27 @@
 import Foundation
 
+struct ContextContinuity: Sendable {
+    let stars: Int
+    let explanation: String
+
+    var starLabel: String {
+        String(repeating: "★", count: stars) + String(repeating: "☆", count: 5 - stars)
+    }
+
+    var displayLabel: String {
+        "\(starLabel) · \(explanation)"
+    }
+
+    var accessibilityLabel: String {
+        "Context continuity: \(stars) out of five stars. \(explanation)."
+    }
+}
+
 enum SessionDisplay {
     private static let shortSessionSeconds = 60
     private static let mediumSessionSeconds = 300
     private static let timeSkewThreshold = 0.30
+    private static let continuityMinimumSeconds = 180
 
     static func elapsedSeconds(for session: Session) -> Int {
         max(session.durationSeconds, 0)
@@ -143,15 +161,31 @@ enum SessionDisplay {
     }
 
     static func expandedApps(for session: Session) -> [SessionApp] {
+        let featured = featuredApp(for: session)
         let detail = session.apps.filter { SessionAppDisplay.shouldShowInDetail($0, in: session) }
         let candidates = detail.isEmpty
             ? SessionAppDisplay.rankedApps(session.apps)
             : detail
-        let filtered = candidates.filter {
+        var filtered = candidates.filter {
             shouldShowAppInList($0, session: session, candidates: candidates)
+                && !isNoiseApp($0, in: session)
         }
-        if !filtered.isEmpty { return filtered }
-        return candidates
+        if filtered.isEmpty {
+            let withoutNoise = candidates.filter { !isNoiseApp($0, in: session) }
+            filtered = withoutNoise.isEmpty ? candidates : withoutNoise
+        }
+        if let featured, !filtered.contains(where: { $0.bundleId == featured.bundleId }) {
+            filtered.insert(featured, at: 0)
+        }
+        return filtered
+    }
+
+    private static func isNoiseApp(_ app: SessionApp, in session: Session) -> Bool {
+        guard session.apps.count > 1 else { return false }
+        let totalActive = session.apps.reduce(0) { $0 + $1.activeSeconds }
+        guard totalActive > 0 else { return false }
+        let share = Double(app.activeSeconds) / Double(totalActive)
+        return app.activeSeconds <= 10 && share < 0.1
     }
 
     static func contextSubtitle(for session: Session) -> String? {
@@ -231,6 +265,64 @@ enum SessionDisplay {
     static func isSingleAppSession(_ session: Session, detailApps: [SessionApp]) -> Bool {
         detailApps.count <= 1 && session.apps.count <= 1
     }
+
+    static func contextContinuity(for session: Session) -> ContextContinuity? {
+        let apps = session.apps.filter { !isNoiseApp($0, in: session) }
+        let totalActive = apps.reduce(0) { $0 + $1.activeSeconds }
+        guard totalActive >= continuityMinimumSeconds else { return nil }
+
+        let onTaskSeconds = apps
+            .filter { isOnTask($0, activity: session.activity) }
+            .reduce(0) { $0 + $1.activeSeconds }
+        let focusRatio = Double(onTaskSeconds) / Double(totalActive)
+
+        if focusRatio > 0.90 {
+            return ContextContinuity(stars: 5, explanation: "Stayed on task throughout")
+        }
+        if focusRatio >= 0.75 {
+            return ContextContinuity(stars: 4, explanation: "Mostly on task")
+        }
+        if focusRatio >= 0.50 {
+            return ContextContinuity(stars: 3, explanation: "Some unrelated activity")
+        }
+        if focusRatio >= 0.30 {
+            return ContextContinuity(stars: 2, explanation: "Split between tasks")
+        }
+        return ContextContinuity(stars: 1, explanation: "Mostly unrelated activity")
+    }
+
+    private static func isOnTask(_ app: SessionApp, activity: String) -> Bool {
+        let bundle = app.bundleId
+        if SessionAppDisplay.isEditor(bundle) { return true }
+        if assistantBundles.contains(bundle) { return true }
+
+        let activityLower = activity.lowercased()
+        for title in app.windowTitles {
+            if title.lowercased().contains(activityLower) { return true }
+        }
+        for url in app.urls {
+            if url.lowercased().contains(activityLower) { return true }
+        }
+
+        if let project = SessionAppDisplay.inferredProject(for: app),
+           project.lowercased() == activityLower {
+            return true
+        }
+
+        let devHints = ["stackoverflow", "github", "developer.apple", "localhost", "127.0.0.1"]
+        let allContent = (app.windowTitles + app.urls).joined(separator: " ").lowercased()
+        if devHints.contains(where: { allContent.contains($0) }) { return true }
+
+        return false
+    }
+
+    private static let assistantBundles: Set<String> = [
+        "com.anthropic.claude",
+        "com.anthropic.claudefordesktop",
+        "com.openai.chat",
+        "ai.perplexity.mac",
+        "ai.perplexity.macv3",
+    ]
 
     private static func appTimeSkew(for session: Session) -> Double {
         let totalActive = session.apps.reduce(0) { $0 + $1.activeSeconds }

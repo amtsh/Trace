@@ -160,6 +160,19 @@ struct TimelineView: View {
             .padding(.bottom, DS.Spacing.xxl)
         }
         .scrollIndicators(.hidden)
+        .scrollIndicatorsFlash(onAppear: false)
+        .onAppear { hideNSScrollViewIndicators() }
+    }
+
+    private func hideNSScrollViewIndicators() {
+        DispatchQueue.main.async {
+            for window in NSApplication.shared.windows {
+                for case let scrollView as NSScrollView in window.contentView?.descendants ?? [] {
+                    scrollView.hasVerticalScroller = false
+                    scrollView.hasHorizontalScroller = false
+                }
+            }
+        }
     }
 
     // MARK: - Day grouping

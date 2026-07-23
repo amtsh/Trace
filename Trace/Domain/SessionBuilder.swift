@@ -2,8 +2,8 @@ import Foundation
 
 enum SessionBuilder {
     private static let hardBreakSeconds: TimeInterval = 30 * 60
-    private static let unrelatedSnapshotThreshold = 2
-    private static let substantialDetourSeconds: TimeInterval = 5 * 60
+    private static let unrelatedSnapshotThreshold = 4
+    private static let substantialDetourSeconds: TimeInterval = 8 * 60
 
     private static let assistantBundles: Set<String> = [
         "com.anthropic.claude",

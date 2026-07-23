@@ -26,8 +26,9 @@ enum SummaryPrompt {
     static let instructions = """
         You summarize what someone did in a work session. \
         Reply with a short natural phrase of 5–10 words. No period. \
-        Focus on what they were doing or working on — name specific files, topics, or tasks. \
-        Do not just list app names.
+        Focus on the main task or project — name it if clear. \
+        Do not list app names. Do not echo raw search queries or URLs. \
+        Write a human-readable activity description.
         """
 
     static func cacheKey(for apps: [SessionApp], durationMinutes: Int) -> String {
@@ -45,7 +46,9 @@ enum SummaryPrompt {
         // Surface the richest signals first: files, titles, URLs — not app names.
         var contextLines: [(app: String, line: String)] = []
         for app in ranked.prefix(budget.maxApps) {
-            let lines = SessionAppDisplay.contextLines(for: app).prefix(budget.maxLinesPerApp)
+            let lines = SessionAppDisplay.contextLines(for: app)
+                .prefix(budget.maxLinesPerApp)
+                .filter { !looksLikeSearchQuery($0.text) }
             for line in lines {
                 contextLines.append((app.appName, truncate(line.text, max: budget.maxLineLength)))
             }
@@ -103,6 +106,15 @@ enum SummaryPrompt {
         // 3. Top two app names as last resort
         let names = ranked.prefix(2).map(\.appName).joined(separator: " + ")
         return names.isEmpty ? "Work session" : names
+    }
+
+    static func looksLikeSearchQuery(_ text: String) -> Bool {
+        let lower = text.lowercased()
+        let searchHints = [
+            "google.com/search", "search?q=", "bing.com/search",
+            "duckduckgo.com/?q", "google.com/search?",
+        ]
+        return searchHints.contains(where: { lower.contains($0) })
     }
 
     static func truncate(_ text: String, max: Int) -> String {

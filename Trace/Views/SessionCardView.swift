@@ -3,8 +3,11 @@ import SwiftUI
 struct SessionCardView: View {
     let session: Session
     @Environment(AppState.self) private var appState
-    @State private var isExpanded = false
     @State private var isHovering = false
+
+    private var isExpanded: Bool {
+        appState.expandedSessionId == session.id
+    }
 
     private var detailApps: [SessionApp] {
         session.apps.filter { SessionAppDisplay.shouldShowInDetail($0, in: session) }
@@ -163,7 +166,7 @@ struct SessionCardView: View {
             .onTapGesture {
                 guard !session.apps.isEmpty else { return }
                 withAnimation(DS.Animation.cardExpand) {
-                    isExpanded.toggle()
+                    appState.expandedSessionId = isExpanded ? nil : session.id
                 }
             }
 
@@ -172,6 +175,11 @@ struct SessionCardView: View {
                     .padding(.horizontal, DS.Spacing.xl)
 
                 VStack(alignment: .leading, spacing: DS.Spacing.md) {
+                    if let continuity = SessionDisplay.contextContinuity(for: session) {
+                        FocusScoreSection(continuity: continuity)
+                        Divider()
+                    }
+
                     if showAppList {
                         if expandedApps.count > 1 {
                             Text("Apps in this session")
@@ -211,6 +219,34 @@ struct SessionCardView: View {
 
     private var isHidden: Bool {
         appState.isSessionHidden(session)
+    }
+}
+
+// MARK: - Focus score
+
+private struct FocusScoreSection: View {
+    let continuity: ContextContinuity
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: DS.Spacing.xxs) {
+            Text("Focus score:")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Color.white.opacity(DS.Opacity.sectionLabel))
+
+            HStack(spacing: DS.Spacing.xs) {
+                Text(continuity.starLabel)
+                    .font(.caption.weight(.medium))
+                Text("·")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text(continuity.explanation)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .help("How consistently this session stayed on one task")
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Focus score: \(continuity.stars) out of five stars. \(continuity.explanation)")
     }
 }
 

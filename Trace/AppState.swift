@@ -8,6 +8,7 @@ final class AppState {
     var hasCompletedOnboarding: Bool
     var hasAccessibilityPermission: Bool
     var lastPollDate: Date = .now
+    var expandedSessionId: String?
     var databaseError: String? = nil
     private(set) var hiddenSessionIds: Set<String>
     private(set) var summarizingSessionIds: Set<String> = []

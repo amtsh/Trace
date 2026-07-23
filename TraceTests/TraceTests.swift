@@ -461,6 +461,139 @@ struct SessionDisplayTests {
         )
         #expect(SessionAppDisplay.inferredProject(for: cursor) == "Trace")
     }
+
+    private func focusSession(
+        apps: [(name: String, bundle: String, seconds: Int)],
+        activity: String? = nil,
+        durationSeconds: Int = 600
+    ) -> Session {
+        Session(
+            id: "focus",
+            startTime: Date(timeIntervalSince1970: 1_700_000_000),
+            endTime: Date(timeIntervalSince1970: 1_700_000_000 + Double(durationSeconds)),
+            durationSeconds: durationSeconds,
+            apps: apps.map { app in
+                SessionApp(
+                    appName: app.name,
+                    bundleId: app.bundle,
+                    windowTitles: [],
+                    urls: [],
+                    snapshotCount: max(app.seconds / 30, 1),
+                    activeSeconds: app.seconds
+                )
+            },
+            activity: activity ?? apps.first?.name ?? "Activity"
+        )
+    }
+
+    @Test func focusScoreAllOnTask() {
+        let session = focusSession(apps: [
+            ("Xcode", "com.apple.dt.Xcode", 300),
+            ("Cursor", "com.todesktop.230313mzl4w4u92", 200),
+            ("Claude", "com.anthropic.claude", 100),
+        ], activity: "Trace")
+        let rating = SessionDisplay.contextContinuity(for: session)
+        #expect(rating?.stars == 5)
+    }
+
+    @Test func focusScoreMostlyOnTask() {
+        let session = focusSession(apps: [
+            ("Xcode", "com.apple.dt.Xcode", 420),
+            ("Cursor", "com.todesktop.230313mzl4w4u92", 120),
+            ("Messages", "com.apple.MobileSMS", 60),
+        ], activity: "Trace")
+        let rating = SessionDisplay.contextContinuity(for: session)
+        #expect(rating?.stars == 4)
+    }
+
+    @Test func focusScoreSomeUnrelated() {
+        let session = focusSession(apps: [
+            ("Xcode", "com.apple.dt.Xcode", 300),
+            ("Messages", "com.apple.MobileSMS", 150),
+            ("Stocks", "com.apple.stocks", 150),
+        ], activity: "Trace")
+        let rating = SessionDisplay.contextContinuity(for: session)
+        #expect(rating?.stars == 3)
+    }
+
+    @Test func focusScoreSplitBetweenTasks() {
+        let session = focusSession(apps: [
+            ("Xcode", "com.apple.dt.Xcode", 200),
+            ("Messages", "com.apple.MobileSMS", 200),
+            ("Stocks", "com.apple.stocks", 200),
+        ], activity: "Trace")
+        let rating = SessionDisplay.contextContinuity(for: session)
+        #expect(rating?.stars == 2)
+    }
+
+    @Test func focusScoreMostlyUnrelated() {
+        let session = focusSession(apps: [
+            ("Messages", "com.apple.MobileSMS", 200),
+            ("Stocks", "com.apple.stocks", 200),
+            ("Music", "com.apple.Music", 200),
+        ], activity: "Trace")
+        let rating = SessionDisplay.contextContinuity(for: session)
+        #expect(rating?.stars == 1)
+    }
+
+    @Test func focusScoreSkipsShortSessions() {
+        let session = focusSession(
+            apps: [("Xcode", "com.apple.dt.Xcode", 120)],
+            activity: "Trace",
+            durationSeconds: 120
+        )
+        #expect(SessionDisplay.contextContinuity(for: session) == nil)
+    }
+
+    @Test func focusScoreHandlesZeroActiveSeconds() {
+        let session = Session(
+            id: "empty",
+            startTime: Date(),
+            endTime: Date().addingTimeInterval(600),
+            durationSeconds: 600,
+            apps: [
+                SessionApp(
+                    appName: "Xcode",
+                    bundleId: "com.apple.dt.Xcode",
+                    windowTitles: [],
+                    urls: [],
+                    snapshotCount: 1,
+                    activeSeconds: 0
+                ),
+            ],
+            activity: "Xcode"
+        )
+        #expect(SessionDisplay.contextContinuity(for: session) == nil)
+    }
+
+    @Test func focusScoreStarLabelFormatting() {
+        #expect(ContextContinuity(stars: 1, explanation: "test").starLabel == "★☆☆☆☆")
+        #expect(ContextContinuity(stars: 4, explanation: "test").starLabel == "★★★★☆")
+        #expect(ContextContinuity(stars: 5, explanation: "test").starLabel == "★★★★★")
+    }
+
+    @Test func focusScoreAvoidsJudgmentLabels() {
+        let explanations = [
+            SessionDisplay.contextContinuity(for: focusSession(
+                apps: [("Xcode", "com.apple.dt.Xcode", 480)], activity: "Trace"
+            ))?.explanation,
+            SessionDisplay.contextContinuity(for: focusSession(
+                apps: [("Xcode", "com.apple.dt.Xcode", 420), ("Messages", "com.apple.MobileSMS", 120)],
+                activity: "Trace"
+            ))?.explanation,
+            SessionDisplay.contextContinuity(for: focusSession(
+                apps: [("A", "a", 150), ("B", "b", 150), ("C", "c", 150), ("D", "d", 150)]
+            ))?.explanation,
+        ].compactMap { $0 }
+
+        for explanation in explanations {
+            let lower = explanation.lowercased()
+            #expect(!lower.contains("productivity"))
+            #expect(!lower.contains("good"))
+            #expect(!lower.contains("bad"))
+            #expect(!lower.contains("distracted"))
+        }
+    }
 }
 
 struct SummaryPromptTests {
