@@ -40,6 +40,18 @@ enum SessionDisplay {
         return remainder == 0 ? "\(hours)h" : "\(hours)h \(remainder)m"
     }
 
+    static func compactDurationLabel(for session: Session) -> String {
+        let seconds = elapsedSeconds(for: session)
+        if seconds < 60 {
+            return seconds <= 5 ? "<1m" : "\(seconds)s"
+        }
+        let minutes = seconds / 60
+        if minutes < 60 { return "\(minutes)m" }
+        let hours = minutes / 60
+        let remainder = minutes % 60
+        return remainder == 0 ? "\(hours)h" : "\(hours)h \(remainder)m"
+    }
+
     static func relativeTimeLabel(for session: Session, now: Date = Date()) -> String {
         let end = session.endTime
         let calendar = Calendar.current

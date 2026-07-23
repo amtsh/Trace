@@ -18,4 +18,5 @@ protocol SessionPersisting: Sendable {
 
 protocol Summarizer: Sendable {
     func summarize(apps: [SessionApp], durationMinutes: Int) async -> String
+    func regenerate(apps: [SessionApp], durationMinutes: Int, previousSummary: String?) async -> String
 }

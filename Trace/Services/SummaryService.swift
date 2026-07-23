@@ -75,6 +75,17 @@ enum SummaryPrompt {
         return prompt
     }
 
+    static func regeneratePromptSuffix(previousSummary: String?) -> String {
+        guard let previousSummary,
+              !previousSummary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return "" }
+        return """
+
+            Previous summary: "\(previousSummary)"
+            Write a fresh alternative phrasing that still accurately describes the session.
+            """
+    }
+
     /// Heuristic fallback — uses the richest available signal rather than just listing app names.
     /// This is what shows when the on-device LLM is unavailable, so it must be useful on its own.
     static func fallback(apps: [SessionApp], durationMinutes: Int) -> String {
@@ -159,6 +170,29 @@ actor SummaryService: Summarizer {
         return fallback
     }
 
+    func regenerate(apps: [SessionApp], durationMinutes: Int, previousSummary: String?) async -> String {
+        let ranked = SessionAppDisplay.rankedApps(apps)
+        let key = SummaryPrompt.cacheKey(for: ranked, durationMinutes: durationMinutes)
+
+        #if canImport(FoundationModels)
+        if #available(macOS 26, *),
+           let llm = await llmSummarize(
+            apps: ranked,
+            durationMinutes: durationMinutes,
+            previousSummary: previousSummary
+           ) {
+            Logger.summary.info("Regenerated on-device summary")
+            store(key: key, value: llm)
+            return llm
+        }
+        #endif
+
+        Logger.summary.info("Summary regeneration fell back to heuristic")
+        let fallback = SummaryPrompt.fallback(apps: ranked, durationMinutes: durationMinutes)
+        store(key: key, value: fallback)
+        return fallback
+    }
+
     // MARK: - Cache persistence
 
     private func store(key: String, value: String) {
@@ -214,7 +248,11 @@ actor SummaryService: Summarizer {
 
     #if canImport(FoundationModels)
     @available(macOS 26, *)
-    private func llmSummarize(apps: [SessionApp], durationMinutes: Int) async -> String? {
+    private func llmSummarize(
+        apps: [SessionApp],
+        durationMinutes: Int,
+        previousSummary: String? = nil
+    ) async -> String? {
         guard SystemLanguageModel.default.isAvailable else {
             Logger.summary.debug("\(SummaryError.llmUnavailable.localizedDescription, privacy: .public)")
             return nil
@@ -230,7 +268,7 @@ actor SummaryService: Summarizer {
                     apps: apps,
                     durationMinutes: durationMinutes,
                     budget: budget
-                )
+                ) + SummaryPrompt.regeneratePromptSuffix(previousSummary: previousSummary)
                 let response = try await session.respond(
                     to: prompt,
                     generating: GeneratedSummary.self

@@ -64,8 +64,6 @@ enum DS {
 
     // MARK: Opacity
     enum Opacity {
-        /// Card shadow
-        static let shadowCard: Double = 0.35
         /// Day label / header text shadow
         static let shadowText: Double = 0.4
         /// Accessibility banner background tint
@@ -104,12 +102,12 @@ enum DS {
     enum Header {
         /// Shared height for pills, close button, and title row alignment
         static let controlHeight: CGFloat = 26
+        /// Space above the title row inside the panel
+        static let topPadding: CGFloat = 12
     }
 
     // MARK: Shadow
     enum Shadow {
-        static let cardRadius: CGFloat = 8
-        static let cardY: CGFloat = 4
         static let textRadius: CGFloat = 3
         static let textY: CGFloat = 1
         static let heroRadius: CGFloat = 10
@@ -143,6 +141,17 @@ enum DS {
         static let pruneInterval: TimeInterval = 24 * 60 * 60
     }
 
+    // MARK: Glass
+    enum GlassStyle {
+        /// Dark frosted tint for session cards (AppKit `NSGlassEffectView`).
+        static let cardTintOpacity: CGFloat = 0.32
+        /// Lighter tint for header controls.
+        static let controlTintOpacity: CGFloat = 0.22
+        /// Hairline edge highlight on card glass.
+        static let cardBorderOpacity: Double = 0.16
+        static let cardBorderWidth: CGFloat = 0.5
+    }
+
     // MARK: Card limits
     enum Card {
         /// Max secondary app icons shown in collapsed card row
@@ -153,5 +162,31 @@ enum DS {
         static let maxFileRestores: Int = 5
         /// Max web URLs restored per non-browser app
         static let maxWebRestores: Int = 3
+    }
+}
+
+extension View {
+    /// Widget-style liquid glass for session and stats cards.
+    func traceCardGlass(cornerRadius: CGFloat = DS.Radius.card) -> some View {
+        background {
+            NativeGlassBackground(
+                cornerRadius: cornerRadius,
+                tintOpacity: DS.GlassStyle.cardTintOpacity
+            )
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .strokeBorder(
+                    .white.opacity(DS.GlassStyle.cardBorderOpacity),
+                    lineWidth: DS.GlassStyle.cardBorderWidth
+                )
+        }
+    }
+
+    /// Liquid glass for header pills and round controls.
+    func traceControlGlass(cornerRadius: CGFloat, tintOpacity: CGFloat = DS.GlassStyle.controlTintOpacity) -> some View {
+        background {
+            NativeGlassBackground(cornerRadius: cornerRadius, tintOpacity: tintOpacity)
+        }
     }
 }

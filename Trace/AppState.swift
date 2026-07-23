@@ -149,6 +149,25 @@ final class AppState {
         summarizingSessionIds.contains(session.id)
     }
 
+    func regenerateSummary(for session: Session) async {
+        guard let idx = sessions.firstIndex(where: { $0.id == session.id }) else { return }
+        let current = sessions[idx]
+        guard current.summary != nil else { return }
+
+        summarizingSessionIds.insert(current.id)
+        defer { summarizingSessionIds.remove(current.id) }
+
+        let summary = await summarizer.regenerate(
+            apps: current.apps,
+            durationMinutes: current.durationMinutes,
+            previousSummary: current.summary
+        )
+
+        guard !summary.isEmpty,
+              let updateIdx = sessions.firstIndex(where: { $0.id == session.id }) else { return }
+        sessions[updateIdx].summary = summary
+    }
+
     func setSession(_ session: Session, hidden: Bool) {
         if hidden {
             hiddenSessionIds.insert(session.id)

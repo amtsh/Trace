@@ -86,6 +86,7 @@ final class SidebarPanelController {
             newPanel.backgroundColor = .clear
             newPanel.isOpaque = false
             newPanel.hasShadow = false
+            newPanel.isMovableByWindowBackground = false
             newPanel.hidesOnDeactivate = false
             newPanel.isReleasedWhenClosed = false
 
@@ -93,7 +94,13 @@ final class SidebarPanelController {
             let hv = NSHostingView(rootView: root)
             hv.frame = NSRect(origin: .zero, size: endFrame.size)
             hv.autoresizingMask = [.width, .height]
+            hv.wantsLayer = true
+            hv.layer?.backgroundColor = NSColor.clear.cgColor
+            hv.layer?.isOpaque = false
             newPanel.contentView = hv
+            newPanel.contentView?.wantsLayer = true
+            newPanel.contentView?.layer?.backgroundColor = NSColor.clear.cgColor
+            newPanel.contentView?.layer?.isOpaque = false
 
             self.panel = newPanel
             self.hostingView = hv
@@ -120,6 +127,7 @@ final class SidebarPanelController {
                     guard self?.isOpen == true else { return }
                     self?.installEventMonitors()
                     self?.hideScrollbars()
+                    self?.configureTransparentScrollViews()
                 }
             }
         }
@@ -397,18 +405,27 @@ private struct SidebarRootView: View {
                 TimelineView()
             } else {
                 OnboardingView()
-                    .background(VisualEffectBackground())
-                    .clipShape(
-                        RoundedRectangle(
-                            cornerRadius: DS.Radius.panel,
-                            style: .continuous
-                        )
-                    )
+                    .traceCardGlass(cornerRadius: DS.Radius.panel)
                     .padding(DS.Sidebar.edgeMargin)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(.clear)
         .environment(appState)
+    }
+}
+
+private extension SidebarPanelController {
+    func configureTransparentScrollViews() {
+        guard let hostingView else { return }
+        for case let scrollView as NSScrollView in hostingView.descendants {
+            scrollView.drawsBackground = false
+            scrollView.backgroundColor = .clear
+            scrollView.contentView.drawsBackground = false
+            if let clipView = scrollView.contentView as? NSClipView {
+                clipView.backgroundColor = .clear
+            }
+        }
     }
 }
 
@@ -416,18 +433,4 @@ extension NSView {
     var descendants: [NSView] {
         subviews + subviews.flatMap(\.descendants)
     }
-}
-
-struct VisualEffectBackground: NSViewRepresentable {
-    var material: NSVisualEffectView.Material = .hudWindow
-
-    func makeNSView(context: Context) -> NSVisualEffectView {
-        let view = NSVisualEffectView()
-        view.material = material
-        view.blendingMode = .behindWindow
-        view.state = .active
-        return view
-    }
-
-    func updateNSView(_ view: NSVisualEffectView, context: Context) {}
 }

@@ -135,13 +135,7 @@ private struct StatCard<Content: View>: View {
         }
         .padding(DS.Spacing.xl)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .glassEffect(in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
-        .shadow(
-            color: .black.opacity(DS.Opacity.shadowCard),
-            radius: DS.Shadow.cardRadius,
-            x: 0,
-            y: DS.Shadow.cardY
-        )
+        .traceCardGlass()
     }
 }
 

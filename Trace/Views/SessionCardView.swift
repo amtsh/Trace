@@ -79,8 +79,7 @@ struct SessionCardView: View {
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, DS.Spacing.md)
                 .padding(.vertical, DS.Spacing.xs)
-                .background(VisualEffectBackground())
-                .clipShape(Capsule())
+                .traceControlGlass(cornerRadius: DS.Radius.pill)
                 .contentShape(Capsule())
             }
             .buttonStyle(.plain)
@@ -133,10 +132,7 @@ struct SessionCardView: View {
                     if appState.isSummarizingSession(session), session.summary == nil {
                         SummaryLoadingDots()
                     } else if let summary = displaySummary {
-                        Text(summary)
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
+                        SummarySubtitleRow(session: session, summary: summary)
                     }
 
                     if !secondaryApps.isEmpty {
@@ -153,8 +149,8 @@ struct SessionCardView: View {
                         .padding(.top, 3)
                     }
 
-                    if let timeRange = SessionDisplay.timeRangeWithDurationLabel(for: session) {
-                        Text(timeRange)
+                    if !isExpanded {
+                        Text(SessionDisplay.compactDurationLabel(for: session))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .padding(.top, 2)
@@ -175,6 +171,12 @@ struct SessionCardView: View {
                     .padding(.horizontal, DS.Spacing.xl)
 
                 VStack(alignment: .leading, spacing: DS.Spacing.md) {
+                    if let timeRange = SessionDisplay.timeRangeWithDurationLabel(for: session) {
+                        Text(timeRange)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
                     if let continuity = SessionDisplay.contextContinuity(for: session) {
                         FocusScoreSection(continuity: continuity)
                         Divider()
@@ -205,13 +207,7 @@ struct SessionCardView: View {
                 .transition(.blurReplace)
             }
         }
-        .glassEffect(in: RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
-        .shadow(
-            color: .black.opacity(DS.Opacity.shadowCard),
-            radius: DS.Shadow.cardRadius,
-            x: 0,
-            y: DS.Shadow.cardY
-        )
+        .traceCardGlass()
         .onHover { hovering in
             withAnimation(DS.Animation.hover) { isHovering = hovering }
         }
@@ -247,6 +243,55 @@ private struct FocusScoreSection: View {
         .help("How consistently this session stayed on one task")
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Focus score: \(continuity.stars) out of five stars. \(continuity.explanation)")
+    }
+}
+
+// MARK: - Summary subtitle
+
+private struct SummarySubtitleRow: View {
+    let session: Session
+    let summary: String
+
+    @Environment(AppState.self) private var appState
+    @State private var isHovering = false
+
+    private var canRegenerate: Bool {
+        session.summary != nil
+    }
+
+    private var isRegenerating: Bool {
+        appState.isSummarizingSession(session)
+    }
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: DS.Spacing.xxs) {
+            Text(summary)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+
+            if canRegenerate {
+                if isRegenerating {
+                    ProgressView()
+                        .controlSize(.mini)
+                        .frame(width: 14, height: 14)
+                } else if isHovering {
+                    Button {
+                        Task { await appState.regenerateSummary(for: session) }
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Regenerate summary")
+                    .transition(.opacity)
+                }
+            }
+        }
+        .onHover { hovering in
+            withAnimation(DS.Animation.hover) { isHovering = hovering }
+        }
     }
 }
 

@@ -97,8 +97,7 @@ struct TimelineView: View {
                         .font(.caption2.weight(.medium))
                         .foregroundStyle(.orange)
                         .headerControl(height: DS.Header.controlHeight)
-                        .background(VisualEffectBackground())
-                        .clipShape(Capsule())
+                        .traceControlGlass(cornerRadius: DS.Header.controlHeight / 2)
                 }
 
                 Spacer(minLength: 0)
@@ -112,7 +111,7 @@ struct TimelineView: View {
                 }
             }
             .frame(minHeight: DS.Header.controlHeight)
-            .padding(.top, DS.Spacing.sm)
+            .padding(.top, DS.Header.topPadding)
             .padding(.bottom, DS.Spacing.md)
 
             if !appState.hasAccessibilityPermission {
@@ -188,8 +187,7 @@ struct TimelineView: View {
                 .font(.system(size: 10, weight: .bold))
                 .foregroundStyle(.secondary)
                 .frame(width: DS.Header.controlHeight, height: DS.Header.controlHeight)
-                .background(VisualEffectBackground())
-                .clipShape(Circle())
+                .traceControlGlass(cornerRadius: DS.Header.controlHeight / 2)
         }
         .buttonStyle(.plain)
         .help("Close")
@@ -201,8 +199,7 @@ struct TimelineView: View {
             .font(.caption.weight(.medium))
             .foregroundStyle(.secondary)
             .headerControl(height: DS.Header.controlHeight)
-            .background(VisualEffectBackground())
-            .clipShape(Capsule())
+            .traceControlGlass(cornerRadius: DS.Header.controlHeight / 2)
     }
 
     // MARK: - Empty state
@@ -215,8 +212,7 @@ struct TimelineView: View {
                 Text("Trace records what you're working on.\nCheck back shortly.")
             }
             .padding(.vertical, 20)
-            .background(VisualEffectBackground())
-            .clipShape(RoundedRectangle(cornerRadius: DS.Radius.card, style: .continuous))
+            .traceCardGlass()
             .padding(.top, DS.Spacing.xxs)
 
             Spacer()
@@ -271,7 +267,10 @@ struct TimelineView: View {
             }
             .scrollIndicators(.hidden)
             .scrollIndicatorsFlash(onAppear: false)
-            .onAppear { hideNSScrollViewIndicators() }
+            .onAppear {
+                hideNSScrollViewIndicators()
+                configureTransparentScrollViews()
+            }
             .onChange(of: appState.panelPresentationGeneration) {
                 proxy.scrollTo("timelineTop", anchor: .top)
             }
@@ -279,11 +278,19 @@ struct TimelineView: View {
     }
 
     private func hideNSScrollViewIndicators() {
+        configureTransparentScrollViews()
+    }
+
+    private func configureTransparentScrollViews() {
         DispatchQueue.main.async {
             for window in NSApplication.shared.windows {
                 for case let scrollView as NSScrollView in window.contentView?.descendants ?? [] {
                     scrollView.hasVerticalScroller = false
                     scrollView.hasHorizontalScroller = false
+                    scrollView.drawsBackground = false
+                    scrollView.backgroundColor = .clear
+                    scrollView.contentView.drawsBackground = false
+                    scrollView.contentView.backgroundColor = .clear
                 }
             }
         }
