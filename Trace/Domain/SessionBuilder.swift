@@ -4,6 +4,7 @@ enum SessionBuilder {
     private static let hardBreakSeconds: TimeInterval = 30 * 60
     private static let unrelatedSnapshotThreshold = 4
     private static let substantialDetourSeconds: TimeInterval = 8 * 60
+    private static let microSessionSeconds = 120
 
     private static let assistantBundles: Set<String> = [
         "com.anthropic.claude",
@@ -16,6 +17,20 @@ enum SessionBuilder {
         "com.todesktop.230313mzl4w4u92",
         "com.microsoft.VSCode",
         "com.apple.TextEdit",
+    ]
+
+    private static let supportingBundles: Set<String> = [
+        "com.apple.finder",
+        "com.apple.Preview",
+        "com.apple.ActivityMonitor",
+        "com.apple.systempreferences",
+        "com.apple.SystemPreferences",
+        "com.apple.Spotlight",
+        "com.apple.archiveutility",
+        "com.apple.installer",
+        "com.apple.keychainaccess",
+        "com.apple.Console",
+        "com.apple.dt.Instruments",
     ]
 
     private static let sourceFileExtensions: Set<String> = [
@@ -104,7 +119,84 @@ enum SessionBuilder {
 
         flushAtBoundary()
 
-        return groups.map { makeSession(from: $0.snapshots, project: $0.project) }.reversed()
+        let merged = absorbMicroGroups(groups)
+        return merged.map { makeSession(from: $0.snapshots, project: $0.project) }.reversed()
+    }
+
+    private static func absorbMicroGroups(
+        _ groups: [(snapshots: [Snapshot], project: String?)]
+    ) -> [(snapshots: [Snapshot], project: String?)] {
+        guard groups.count > 1 else { return groups }
+
+        var result = groups
+        var absorbed = true
+        while absorbed {
+            absorbed = false
+            var next: [(snapshots: [Snapshot], project: String?)] = []
+            var i = 0
+            while i < result.count {
+                let group = result[i]
+                let duration = groupDuration(group.snapshots)
+
+                if duration < microSessionSeconds, result.count > 1 {
+                    let canMergePrev = next.last.map { canAbsorbMicro(group, into: $0) } ?? false
+                    let canMergeNext = (i + 1 < result.count) ? canAbsorbMicro(group, into: result[i + 1]) : false
+
+                    if !canMergePrev && !canMergeNext {
+                        next.append(group)
+                        i += 1
+                        continue
+                    }
+
+                    let target: Int
+                    if canMergePrev && canMergeNext {
+                        let gapToPrev = group.snapshots.first.map { s in
+                            s.timestamp.timeIntervalSince(next.last!.snapshots.last?.timestamp ?? s.timestamp)
+                        } ?? .infinity
+                        let gapToNext = result[i + 1].snapshots.first.map { s in
+                            s.timestamp.timeIntervalSince(group.snapshots.last?.timestamp ?? s.timestamp)
+                        } ?? .infinity
+                        target = gapToPrev <= gapToNext ? -1 : 1
+                    } else {
+                        target = canMergePrev ? -1 : 1
+                    }
+
+                    if target == -1 {
+                        let last = next.removeLast()
+                        let mergedProject = last.project ?? group.project
+                        next.append((last.snapshots + group.snapshots, mergedProject))
+                    } else {
+                        let following = result[i + 1]
+                        let mergedProject = following.project ?? group.project
+                        result[i + 1] = (group.snapshots + following.snapshots, mergedProject)
+                    }
+                    absorbed = true
+                } else {
+                    next.append(group)
+                }
+                i += 1
+            }
+            result = next
+        }
+        return result
+    }
+
+    private static func canAbsorbMicro(
+        _ micro: (snapshots: [Snapshot], project: String?),
+        into target: (snapshots: [Snapshot], project: String?)
+    ) -> Bool {
+        if let microProject = micro.project, let targetProject = target.project {
+            return normalizeProjectName(microProject) == normalizeProjectName(targetProject)
+        }
+        if micro.project == nil && target.project == nil { return true }
+        if micro.project != nil { return false }
+        guard let targetProject = target.project else { return true }
+        return micro.snapshots.contains { contentRelatesToProject($0, project: targetProject) }
+    }
+
+    private static func groupDuration(_ snapshots: [Snapshot]) -> Int {
+        guard let first = snapshots.first, let last = snapshots.last else { return 0 }
+        return max(Int(last.timestamp.timeIntervalSince(first.timestamp)), 0)
     }
 
     // MARK: - Relatedness
@@ -124,6 +216,7 @@ enum SessionBuilder {
         }
 
         if assistantBundles.contains(snapshot.appBundle) { return true }
+        if supportingBundles.contains(snapshot.appBundle) { return true }
 
         if isWorkApp(snapshot.appBundle) {
             if let sessionProject, let url = snapshot.documentURL,
@@ -203,6 +296,9 @@ enum SessionBuilder {
         "src", "lib", "app", "sources", "tests", "test", "spec",
         "build", "dist", "out", "bin", "cmd", "internal", "pkg",
         "vendor", "node_modules", "packages", "target",
+        "public", "static", "assets", "www", "htdocs",
+        "tmp", "temp", "cache", "logs", "log",
+        "config", "configs", "scripts", "tools",
     ]
 
     private static let sourceSubdirs: Set<String> = [
@@ -273,12 +369,24 @@ enum SessionBuilder {
             let lower = dir.lowercased()
             if !genericDirs.contains(lower),
                !sourceSubdirs.contains(lower),
-               !dir.hasPrefix(".") {
+               !dir.hasPrefix("."),
+               !isJunkProjectName(lower) {
                 return dir
             }
         }
         return nil
     }
+
+    private static func isJunkProjectName(_ name: String) -> Bool {
+        if name.count <= 2 { return true }
+        return junkNames.contains(name)
+    }
+
+    private static let junkNames: Set<String> = [
+        "pwd", "usr", "var", "etc", "opt", "run", "srv",
+        "private", "volumes", "applications", "library",
+        "system", "cores", "dev", "sbin",
+    ]
 
     private static func projectFromXcodeTitle(_ title: String, documentURL: String?) -> String? {
         let parts = title.components(separatedBy: " — ")
