@@ -54,12 +54,12 @@ enum SessionDisplay {
     static func timeRangeLabel(for session: Session) -> String? {
         guard shouldShowTimeRange(for: session) else { return nil }
         let fmt = Date.FormatStyle().hour().minute()
-        return "\(session.startTime.formatted(fmt)) – \(session.endTime.formatted(fmt))"
+        return "\(session.startTime.formatted(fmt)) \u2013 \(session.endTime.formatted(fmt))"
     }
 
     static func timeRangeWithDurationLabel(for session: Session) -> String? {
         guard let range = timeRangeLabel(for: session) else { return nil }
-        return "\(range) · \(durationLabel(for: session))"
+        return "\(range) \u00b7 \(durationLabel(for: session))"
     }
 
     static func shouldShowAppTimeShares(for session: Session) -> Bool {
@@ -96,9 +96,21 @@ enum SessionDisplay {
         let activityLower = activity.lowercased()
         let textLower = text.lowercased()
 
+        // Strip only truly useless summaries — be conservative so the heuristic
+        // fallback (which uses file/title/project info) is not discarded.
         if textLower == activityLower { return nil }
         if textLower == "working in \(activityLower)" { return nil }
         if textLower == "no activity recorded" { return nil }
+        if textLower == "work session" { return nil }
+
+        // Strip if it's literally just a list of app names joined with " + "
+        let appNames = apps.map { $0.appName.lowercased() }
+        let summaryParts = textLower
+            .components(separatedBy: " + ")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+        if summaryParts.count >= 1 && summaryParts.allSatisfy({ appNames.contains($0) }) {
+            return nil
+        }
 
         if text.hasSuffix(":") {
             let withoutColon = text.dropLast().trimmingCharacters(in: .whitespaces)

@@ -41,20 +41,27 @@ enum SummaryPrompt {
 
     static func build(apps: [SessionApp], durationMinutes: Int, budget: Budget = .standard) -> String {
         let ranked = SessionAppDisplay.rankedApps(apps)
-        var prompt = """
-            Summarize this \(durationMinutes)-minute work session in one short phrase \
-            (5–10 words, no period).\n\n"""
 
+        // Surface the richest signals first: files, titles, URLs — not app names.
+        var contextLines: [(app: String, line: String)] = []
         for app in ranked.prefix(budget.maxApps) {
             let lines = SessionAppDisplay.contextLines(for: app).prefix(budget.maxLinesPerApp)
-            if lines.isEmpty {
-                prompt += "\(app.appName)\n"
-            } else {
-                let detail = lines
-                    .map { truncate($0.text, max: budget.maxLineLength) }
-                    .joined(separator: ", ")
-                prompt += "\(app.appName): \(detail)\n"
+            for line in lines {
+                contextLines.append((app.appName, truncate(line.text, max: budget.maxLineLength)))
             }
+        }
+
+        var prompt = "Summarize this \(durationMinutes)-minute work session in one short phrase (5\u201310 words, no period).\n\n"
+
+        if !contextLines.isEmpty {
+            prompt += "Context (files, titles, tabs):\n"
+            for item in contextLines {
+                prompt += "  \u2022 [\(item.app)] \(item.line)\n"
+            }
+        } else {
+            // No rich context — fall back to app list so model has something
+            let names = ranked.prefix(budget.maxApps).map(\.appName).joined(separator: ", ")
+            prompt += "Apps used: \(names)\n"
         }
 
         if ranked.count > budget.maxApps {
@@ -64,16 +71,43 @@ enum SummaryPrompt {
         return prompt
     }
 
-    /// Template fallback used when on-device LLM is unavailable.
+    /// Heuristic fallback — uses the richest available signal rather than just listing app names.
+    /// This is what shows when the on-device LLM is unavailable, so it must be useful on its own.
     static func fallback(apps: [SessionApp], durationMinutes: Int) -> String {
         let ranked = SessionAppDisplay.rankedApps(apps)
-        let names = ranked.prefix(2).map(\.appName).joined(separator: ", ")
-        return "\(names) · \(durationMinutes) min"
+
+        // 1. Best display line from the primary app (file name, page title, project)
+        if let primary = ranked.first,
+           let best = SessionAppDisplay.bestDisplayLine(for: primary) {
+            let detail = best.text
+            // Only use it if it's meaningfully different from the app name
+            if detail.lowercased() != primary.appName.lowercased() {
+                // If there's a secondary app with its own context, append it
+                if let secondary = ranked.dropFirst().first(where: {
+                    SessionAppDisplay.bestDisplayLine(for: $0) != nil
+                }),
+                let secondaryLine = SessionAppDisplay.bestDisplayLine(for: secondary),
+                secondaryLine.text.lowercased() != secondary.appName.lowercased() {
+                    return "\(detail) — \(secondaryLine.text)"
+                }
+                return detail
+            }
+        }
+
+        // 2. Inferred project name from the primary app
+        if let primary = ranked.first,
+           let project = SessionAppDisplay.inferredProject(for: primary) {
+            return project
+        }
+
+        // 3. Top two app names as last resort
+        let names = ranked.prefix(2).map(\.appName).joined(separator: " + ")
+        return names.isEmpty ? "Work session" : names
     }
 
     static func truncate(_ text: String, max: Int) -> String {
         guard text.count > max else { return text }
-        return String(text.prefix(max - 1)) + "…"
+        return String(text.prefix(max - 1)) + "\u2026"
     }
 }
 
@@ -102,7 +136,6 @@ actor SummaryService: Summarizer {
         }
         #endif
 
-        // Template fallback — always returns a non-empty string
         let fallback = SummaryPrompt.fallback(apps: ranked, durationMinutes: durationMinutes)
         store(key: key, value: fallback)
         return fallback
