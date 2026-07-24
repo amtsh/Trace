@@ -150,6 +150,8 @@ enum DS {
         /// Hairline edge highlight on cards.
         static let cardBorderOpacity: Double = 0.16
         static let cardBorderWidth: CGFloat = 0.5
+        /// Separator lines inside expanded cards.
+        static let cardDividerOpacity: Double = 0.1
     }
 
     // MARK: Card limits

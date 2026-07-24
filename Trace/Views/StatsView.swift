@@ -4,7 +4,7 @@ struct StatsView: View {
     @Environment(AppState.self) private var appState
 
     var body: some View {
-        let stats = StatsBuilder.build(from: appState.sessions)
+        let stats = StatsBuilder.build(from: appState.displaySessions)
         VStack(alignment: .leading, spacing: DS.Spacing.sm) {
             overviewCard(stats)
             dailyCard(stats)

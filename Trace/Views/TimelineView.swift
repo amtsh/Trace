@@ -12,7 +12,7 @@ struct TimelineView: View {
 
     var body: some View {
         Group {
-            if appState.sessions.isEmpty {
+            if appState.displaySessions.isEmpty {
                 VStack(spacing: 0) {
                     header
                     emptyState
@@ -32,7 +32,7 @@ struct TimelineView: View {
         .onAppear {
             appState.checkAccessibility()
         }
-        .onChange(of: appState.sessions.map(\.id)) {
+        .onChange(of: appState.displaySessions.map(\.id)) {
             rebuildDayGroups()
         }
         .onChange(of: appState.panelPresentationGeneration) {
@@ -103,7 +103,7 @@ struct TimelineView: View {
                 Spacer(minLength: 0)
 
                 HStack(alignment: .center, spacing: DS.Spacing.xs) {
-                    if !appState.sessions.isEmpty {
+                    if !appState.displaySessions.isEmpty {
                         statsToggle
                     }
                     headerMenu
@@ -158,6 +158,16 @@ struct TimelineView: View {
                     isOn: .init(
                         get: { appState.isTracking },
                         set: { _ in appState.toggleTracking() }
+                    )
+                )
+                Toggle(
+                    "Show Demo Data",
+                    isOn: .init(
+                        get: { appState.showFakeData },
+                        set: { _ in
+                            appState.showFakeData.toggle()
+                            rebuildDayGroups()
+                        }
                     )
                 )
                 Divider()
@@ -311,7 +321,7 @@ struct TimelineView: View {
     }
 
     private func rebuildDayGroups() {
-        let sorted = appState.sessions.sorted { $0.startTime > $1.startTime }
+        let sorted = appState.displaySessions.sorted { $0.startTime > $1.startTime }
         var groups: [DayGroup] = []
         var currentKey = ""
         var currentLabel = ""

@@ -10,7 +10,12 @@ final class AppState {
     var hasAccessibilityPermission: Bool
     var lastPollDate: Date = .now
     var expandedSessionId: String?
+    var showFakeData = false
     var databaseError: String? = nil
+
+    var displaySessions: [Session] {
+        showFakeData ? FakeDataProvider.sessions() : sessions
+    }
     private(set) var panelPresentationGeneration = 0
     var isHeaderMenuOpen = false
     private(set) var isOutsideDismissBlocked = false

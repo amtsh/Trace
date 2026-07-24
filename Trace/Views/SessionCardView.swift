@@ -132,7 +132,7 @@ struct SessionCardView: View {
                     if appState.isSummarizingSession(session), session.summary == nil {
                         SummaryLoadingDots()
                     } else if let summary = displaySummary {
-                        SummarySubtitleRow(session: session, summary: summary)
+                        SummarySubtitleRow(session: session, summary: summary, isExpanded: isExpanded)
                     }
 
                     if !secondaryApps.isEmpty {
@@ -167,15 +167,14 @@ struct SessionCardView: View {
             }
 
             if isExpanded {
-                Divider()
-                    .padding(.horizontal, DS.Spacing.xl)
+                CardDivider(horizontalInset: DS.Spacing.xl)
 
                 VStack(alignment: .leading, spacing: DS.Spacing.lg) {
                     SessionMetaSection(session: session)
 
                     if showAppList {
                         if SessionMetaSection.hasContent(for: session) {
-                            Divider()
+                            CardDivider()
                         }
 
                         if expandedApps.count > 1 {
@@ -192,14 +191,14 @@ struct SessionCardView: View {
                                     showOpenAction: true
                                 )
                                 if app.id != expandedApps.last?.id {
-                                    Divider().padding(.leading, 36)
+                                    CardDivider(leadingInset: 36)
                                 }
                             }
                         }
                     }
                 }
                 .padding(DS.Spacing.xl)
-                .transition(.blurReplace)
+                .transition(.opacity)
             }
         }
         .traceCardGlass()
@@ -210,6 +209,19 @@ struct SessionCardView: View {
 
     private var isHidden: Bool {
         appState.isSessionHidden(session)
+    }
+}
+
+private struct CardDivider: View {
+    var leadingInset: CGFloat = 0
+    var horizontalInset: CGFloat = 0
+
+    var body: some View {
+        Rectangle()
+            .fill(Color.primary.opacity(DS.GlassStyle.cardDividerOpacity))
+            .frame(height: 1)
+            .padding(.horizontal, horizontalInset)
+            .padding(.leading, leadingInset)
     }
 }
 
@@ -282,9 +294,9 @@ private struct SessionMetaRow: View {
 private struct SummarySubtitleRow: View {
     let session: Session
     let summary: String
+    let isExpanded: Bool
 
     @Environment(AppState.self) private var appState
-    @State private var isHovering = false
 
     private var canRegenerate: Bool {
         session.summary != nil
@@ -299,14 +311,14 @@ private struct SummarySubtitleRow: View {
             Text(summary)
                 .font(.callout)
                 .foregroundStyle(DS.Text.cardMuted)
-                .lineLimit(2)
+                .lineLimit(isExpanded ? nil : 2)
 
             if canRegenerate {
                 if isRegenerating {
                     ProgressView()
                         .controlSize(.mini)
                         .frame(width: 14, height: 14)
-                } else if isHovering {
+                } else if isExpanded {
                     Button {
                         Task { await appState.regenerateSummary(for: session) }
                     } label: {
@@ -316,12 +328,8 @@ private struct SummarySubtitleRow: View {
                     }
                     .buttonStyle(.plain)
                     .help("Regenerate summary")
-                    .transition(.opacity)
                 }
             }
-        }
-        .onHover { hovering in
-            withAnimation(DS.Animation.hover) { isHovering = hovering }
         }
     }
 }
