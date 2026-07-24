@@ -146,7 +146,7 @@ private struct CardTitle: View {
     var body: some View {
         Text(text)
             .font(.caption.weight(.semibold))
-            .foregroundStyle(Color.white.opacity(DS.Opacity.sectionLabel))
+            .foregroundStyle(DS.Text.cardSection)
     }
 }
 

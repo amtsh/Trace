@@ -76,7 +76,7 @@ struct SessionCardView: View {
                     Text("Hidden activity")
                         .font(.caption.weight(.medium))
                 }
-                .foregroundStyle(.secondary)
+                .foregroundStyle(DS.Text.cardMuted)
                 .padding(.horizontal, DS.Spacing.md)
                 .padding(.vertical, DS.Spacing.xs)
                 .traceControlGlass(cornerRadius: DS.Radius.pill)
@@ -104,7 +104,7 @@ struct SessionCardView: View {
                             } label: {
                                 Text("Hide")
                                     .font(.caption2.weight(.medium))
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(DS.Text.cardMuted)
                             }
                             .buttonStyle(.plain)
                             .transition(.opacity)
@@ -122,10 +122,10 @@ struct SessionCardView: View {
                         Spacer()
                         Text(SessionDisplay.relativeTimeLabel(for: session))
                             .font(.callout)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(DS.Text.cardMuted)
                         Image(systemName: "chevron.right")
                             .font(.system(size: DS.IconSize.chevron, weight: .bold))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(DS.Text.cardMuted)
                             .rotationEffect(.degrees(isExpanded ? 90 : 0))
                     }
 
@@ -143,7 +143,7 @@ struct SessionCardView: View {
                             if secondaryApps.count > DS.Card.maxSecondaryIcons {
                                 Text("+\(secondaryApps.count - DS.Card.maxSecondaryIcons)")
                                     .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(DS.Text.cardMuted)
                             }
                         }
                         .padding(.top, 3)
@@ -152,7 +152,7 @@ struct SessionCardView: View {
                     if !isExpanded {
                         Text(SessionDisplay.compactDurationLabel(for: session))
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(DS.Text.cardMuted)
                             .padding(.top, 2)
                     }
                 }
@@ -170,23 +170,18 @@ struct SessionCardView: View {
                 Divider()
                     .padding(.horizontal, DS.Spacing.xl)
 
-                VStack(alignment: .leading, spacing: DS.Spacing.md) {
-                    if let timeRange = SessionDisplay.timeRangeWithDurationLabel(for: session) {
-                        Text(timeRange)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    if let continuity = SessionDisplay.contextContinuity(for: session) {
-                        FocusScoreSection(continuity: continuity)
-                        Divider()
-                    }
+                VStack(alignment: .leading, spacing: DS.Spacing.lg) {
+                    SessionMetaSection(session: session)
 
                     if showAppList {
+                        if SessionMetaSection.hasContent(for: session) {
+                            Divider()
+                        }
+
                         if expandedApps.count > 1 {
                             Text("Apps in this session")
                                 .font(.caption.weight(.semibold))
-                                .foregroundStyle(Color.white.opacity(DS.Opacity.sectionLabel))
+                                .foregroundStyle(DS.Text.cardSection)
                         }
 
                         VStack(spacing: 0) {
@@ -218,31 +213,67 @@ struct SessionCardView: View {
     }
 }
 
-// MARK: - Focus score
+// MARK: - Session meta
 
-private struct FocusScoreSection: View {
-    let continuity: ContextContinuity
+private struct SessionMetaSection: View {
+    let session: Session
+
+    static func hasContent(for session: Session) -> Bool {
+        SessionDisplay.timeRangeWithDurationLabel(for: session) != nil
+            || SessionDisplay.contextContinuity(for: session) != nil
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: DS.Spacing.xxs) {
-            Text("Focus score:")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(Color.white.opacity(DS.Opacity.sectionLabel))
+        let timeRange = SessionDisplay.timeRangeWithDurationLabel(for: session)
+        let continuity = SessionDisplay.contextContinuity(for: session)
 
-            HStack(spacing: DS.Spacing.xs) {
-                Text(continuity.starLabel)
-                    .font(.caption.weight(.medium))
-                Text("·")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Text(continuity.explanation)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+        if timeRange != nil || continuity != nil {
+            VStack(alignment: .leading, spacing: DS.Spacing.sm) {
+                if let timeRange {
+                    SessionMetaRow(label: "Duration", value: timeRange)
+                }
+                if let continuity {
+                    SessionMetaRow(
+                        label: "Focus",
+                        value: continuity.starLabel,
+                        detail: continuity.explanation
+                    )
+                    .help("How consistently this session stayed on one task")
+                    .accessibilityLabel(
+                        "Focus score: \(continuity.stars) out of five stars. \(continuity.explanation)"
+                    )
+                }
             }
         }
-        .help("How consistently this session stayed on one task")
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Focus score: \(continuity.stars) out of five stars. \(continuity.explanation)")
+    }
+}
+
+private struct SessionMetaRow: View {
+    let label: String
+    let value: String
+    var detail: String? = nil
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: DS.Spacing.md) {
+            Text(label)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(DS.Text.cardSection)
+                .frame(width: 58, alignment: .leading)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(value)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.primary)
+
+                if let detail {
+                    Text(detail)
+                        .font(.caption)
+                        .foregroundStyle(DS.Text.cardMuted)
+                }
+            }
+
+            Spacer(minLength: 0)
+        }
     }
 }
 
@@ -267,7 +298,7 @@ private struct SummarySubtitleRow: View {
         HStack(alignment: .firstTextBaseline, spacing: DS.Spacing.xxs) {
             Text(summary)
                 .font(.callout)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(DS.Text.cardMuted)
                 .lineLimit(2)
 
             if canRegenerate {
@@ -281,7 +312,7 @@ private struct SummarySubtitleRow: View {
                     } label: {
                         Image(systemName: "arrow.clockwise")
                             .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(DS.Text.cardMuted)
                     }
                     .buttonStyle(.plain)
                     .help("Regenerate summary")
@@ -304,7 +335,7 @@ private struct SummaryLoadingDots: View {
             HStack(spacing: 4) {
                 ForEach(0..<3, id: \.self) { index in
                     Circle()
-                        .fill(Color.secondary.opacity(0.45))
+                        .fill(DS.Text.cardMuted.opacity(0.55))
                         .frame(width: 4, height: 4)
                         .opacity(opacity(for: index, time: time))
                 }
@@ -348,7 +379,7 @@ struct AppDetailRow: View {
                     if let timeShare {
                         Text(timeShare)
                             .font(.caption2)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(DS.Text.cardMuted)
                     }
                 }
 
@@ -359,14 +390,14 @@ struct AppDetailRow: View {
                             .foregroundStyle(
                                 line.isPath
                                     ? Color.blue.opacity(0.9)
-                                    : Color.white.opacity(DS.Opacity.contextLine)
+                                    : DS.Text.cardContext
                             )
                             .lineLimit(1)
                     }
                     if displayLines.count > DS.Card.maxContextLines {
                         Text("+\(displayLines.count - DS.Card.maxContextLines) more")
                             .font(.caption2)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(DS.Text.cardMuted)
                     }
                 }
             }
@@ -385,7 +416,7 @@ struct AppDetailRow: View {
                             .font(.system(size: DS.IconSize.glyphMd, weight: .medium))
                     }
                 }
-                .foregroundStyle(.secondary)
+                .foregroundStyle(DS.Text.cardMuted)
                 .buttonStyle(.plain)
                 .disabled(isRestoring)
                 .help(
@@ -451,7 +482,7 @@ struct AppIconBadge: View {
             } else {
                 Image(systemName: "app.fill")
                     .font(.system(size: size * 0.7))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(DS.Text.cardMuted)
                     .frame(width: size, height: size)
             }
         }

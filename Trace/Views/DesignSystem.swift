@@ -68,16 +68,18 @@ enum DS {
         static let shadowText: Double = 0.4
         /// Accessibility banner background tint
         static let accessoryBannerBg: Double = 0.12
-        /// Section label in expanded card
-        static let sectionLabel: Double = 0.55
-        /// Context lines (non-path) in detail rows
-        static let contextLine: Double = 0.6
-        /// Menu button label
-        static let menuLabel: Double = 0.75
-        /// Menu button background
-        static let menuBg: Double = 0.55
         /// Onboarding icon shadow
         static let heroShadow: Double = 0.3
+    }
+
+    // MARK: Text
+    enum Text {
+        /// Secondary copy on frosted cards — brighter than system `.secondary`.
+        static let cardMuted = Color.primary.opacity(0.78)
+        /// Section headers inside expanded cards.
+        static let cardSection = Color.primary.opacity(0.85)
+        /// Context lines in expanded app rows.
+        static let cardContext = Color.primary.opacity(0.76)
     }
 
     // MARK: Animation
@@ -143,11 +145,9 @@ enum DS {
 
     // MARK: Glass
     enum GlassStyle {
-        /// Dark frosted tint for session cards (AppKit `NSGlassEffectView`).
-        static let cardTintOpacity: CGFloat = 0.32
         /// Lighter tint for header controls.
         static let controlTintOpacity: CGFloat = 0.22
-        /// Hairline edge highlight on card glass.
+        /// Hairline edge highlight on cards.
         static let cardBorderOpacity: Double = 0.16
         static let cardBorderWidth: CGFloat = 0.5
     }
@@ -166,21 +166,27 @@ enum DS {
 }
 
 extension View {
-    /// Widget-style liquid glass for session and stats cards.
     func traceCardGlass(cornerRadius: CGFloat = DS.Radius.card) -> some View {
-        background {
-            NativeGlassBackground(
-                cornerRadius: cornerRadius,
-                tintOpacity: DS.GlassStyle.cardTintOpacity
-            )
-        }
-        .overlay {
-            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .strokeBorder(
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        return background(.ultraThinMaterial, in: shape)
+            .overlay {
+                shape.strokeBorder(
                     .white.opacity(DS.GlassStyle.cardBorderOpacity),
                     lineWidth: DS.GlassStyle.cardBorderWidth
                 )
-        }
+            }
+    }
+
+    /// Opaque-ish material for header pills and round controls.
+    func traceControlMaterial(cornerRadius: CGFloat) -> some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        return background(.regularMaterial, in: shape)
+            .overlay {
+                shape.strokeBorder(
+                    .white.opacity(DS.GlassStyle.cardBorderOpacity),
+                    lineWidth: DS.GlassStyle.cardBorderWidth
+                )
+            }
     }
 
     /// Liquid glass for header pills and round controls.

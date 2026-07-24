@@ -97,7 +97,7 @@ struct TimelineView: View {
                         .font(.caption2.weight(.medium))
                         .foregroundStyle(.orange)
                         .headerControl(height: DS.Header.controlHeight)
-                        .traceControlGlass(cornerRadius: DS.Header.controlHeight / 2)
+                        .traceControlMaterial(cornerRadius: DS.Header.controlHeight / 2)
                 }
 
                 Spacer(minLength: 0)
@@ -187,7 +187,7 @@ struct TimelineView: View {
                 .font(.system(size: 10, weight: .bold))
                 .foregroundStyle(.secondary)
                 .frame(width: DS.Header.controlHeight, height: DS.Header.controlHeight)
-                .traceControlGlass(cornerRadius: DS.Header.controlHeight / 2)
+                .traceControlMaterial(cornerRadius: DS.Header.controlHeight / 2)
         }
         .buttonStyle(.plain)
         .help("Close")
@@ -199,7 +199,7 @@ struct TimelineView: View {
             .font(.caption.weight(.medium))
             .foregroundStyle(.secondary)
             .headerControl(height: DS.Header.controlHeight)
-            .traceControlGlass(cornerRadius: DS.Header.controlHeight / 2)
+            .traceControlMaterial(cornerRadius: DS.Header.controlHeight / 2)
     }
 
     // MARK: - Empty state
