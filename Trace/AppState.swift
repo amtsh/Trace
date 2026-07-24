@@ -104,7 +104,8 @@ final class AppState {
 
                 let summary = await summarizer.summarize(
                     apps: session.apps,
-                    durationMinutes: session.durationMinutes
+                    durationMinutes: session.durationMinutes,
+                    activity: session.activity
                 )
 
                 if needsSummary {
@@ -165,6 +166,7 @@ final class AppState {
         let summary = await summarizer.regenerate(
             apps: current.apps,
             durationMinutes: current.durationMinutes,
+            activity: current.activity,
             previousSummary: current.summary
         )
 

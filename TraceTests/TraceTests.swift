@@ -688,10 +688,10 @@ struct SummaryPromptTests {
 
     @Test func cacheKeyIncludesContext() {
         let app = SessionApp(
-            appName: "Xcode",
-            bundleId: "com.apple.dt.Xcode",
-            windowTitles: ["Trace — TraceApp.swift"],
-            urls: [],
+            appName: "Cursor",
+            bundleId: "com.todesktop.230313mzl4w4u92",
+            windowTitles: ["SessionBuilder.swift"],
+            urls: ["file:///Users/dev/Trace/SessionBuilder.swift"],
             snapshotCount: 5
         )
         let keyA = SummaryPrompt.cacheKey(for: [app], durationMinutes: 5)
@@ -699,13 +699,17 @@ struct SummaryPromptTests {
         #expect(keyA != keyB)
 
         let other = SessionApp(
-            appName: "Xcode",
-            bundleId: "com.apple.dt.Xcode",
-            windowTitles: ["Trace — TimelineView.swift"],
-            urls: [],
+            appName: "Cursor",
+            bundleId: "com.todesktop.230313mzl4w4u92",
+            windowTitles: ["TimelineView.swift"],
+            urls: ["file:///Users/dev/Trace/TimelineView.swift"],
             snapshotCount: 5
         )
         #expect(keyA != SummaryPrompt.cacheKey(for: [other], durationMinutes: 5))
+        #expect(
+            SummaryPrompt.cacheKey(for: [app], durationMinutes: 5, activity: "Trace")
+                != SummaryPrompt.cacheKey(for: [app], durationMinutes: 5, activity: "Other")
+        )
     }
 
     @Test func buildsBoundedPrompt() {
@@ -718,10 +722,59 @@ struct SummaryPromptTests {
                 snapshotCount: 10
             )
         }
-        let prompt = SummaryPrompt.build(apps: apps, durationMinutes: 5, budget: .standard)
-        #expect(prompt.contains("5–10 words"))
+        let prompt = SummaryPrompt.build(
+            apps: apps,
+            durationMinutes: 5,
+            activity: "Trace",
+            budget: .standard
+        )
+        #expect(prompt.contains("6–14 words"))
+        #expect(prompt.contains("Project: Trace"))
         #expect(prompt.contains("+ 2 more apps"))
         #expect(!prompt.contains("App4"))
+    }
+
+    @Test func stripsAgentChromeFromContext() {
+        #expect(SummaryPrompt.stripAgentChrome("Responding - What Does the App Do") == "What Does the App Do")
+        #expect(SummaryPrompt.stripAgentChrome(".: - Thinking - Session split") == "Session split")
+        #expect(SummaryPrompt.stripAgentChrome("Running: ContextContin") == "ContextContin")
+        #expect(SummaryPrompt.isNoiseContext("zsh"))
+        #expect(SummaryPrompt.isNoiseContext("Thinking"))
+        #expect(!SummaryPrompt.isNoiseContext("SessionBuilder.swift"))
+    }
+
+    @Test func fallbackIsShortSentenceWithProjectAndFile() {
+        let apps = [
+            SessionApp(
+                appName: "Cursor",
+                bundleId: "com.todesktop.230313mzl4w4u92",
+                windowTitles: [
+                    "Responding - What Does the App Do",
+                    "SessionBuilder.swift",
+                ],
+                urls: ["file:///Users/dev/xcode/Trace/Trace/Domain/SessionBuilder.swift"],
+                snapshotCount: 8,
+                activeSeconds: 300
+            ),
+            SessionApp(
+                appName: "Warp",
+                bundleId: "dev.warp.Warp-Stable",
+                windowTitles: ["zsh", "Running: ContextContin"],
+                urls: [],
+                snapshotCount: 3,
+                activeSeconds: 60
+            ),
+        ]
+        let text = SummaryPrompt.fallback(apps: apps, durationMinutes: 8, activity: "Trace")
+        #expect(text.hasSuffix("."))
+        #expect(text.split(separator: " ").count <= 16)
+        #expect(!text.lowercased().contains("zsh"))
+        #expect(!text.lowercased().contains("responding"))
+        #expect(
+            text.localizedCaseInsensitiveContains("Trace")
+                || text.localizedCaseInsensitiveContains("SessionBuilder")
+                || text.localizedCaseInsensitiveContains("What Does")
+        )
     }
 }
 

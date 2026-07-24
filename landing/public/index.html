@@ -1,109 +1,883 @@
 <!DOCTYPE html>
-<html>
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Welcome to Firebase Hosting</title>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Trace - Remember what you were doing</title>
+  <meta name="description" content="A private macOS menu bar app that remembers your work context: apps, windows, and tabs you can restore in one click." />
+  <meta name="theme-color" content="#5a96c8" />
+  <meta property="og:title" content="Trace for Mac" />
+  <meta property="og:description" content="What was I doing? Trace remembers, so you don’t have to." />
+  <meta property="og:type" content="website" />
+  <meta property="og:image" content="/trace-panel.jpg" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230a84ff'/%3E%3Cpath d='M8 17a8 8 0 1 1 5 7' fill='none' stroke='white' stroke-width='2.2' stroke-linecap='round'/%3E%3Cpath d='M13 20l-2 4 4-1' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
+  <style>
+    :root {
+      --white: #ffffff;
+      --ink: rgba(255, 255, 255, 0.96);
+      --ink-2: rgba(255, 255, 255, 0.86);
+      --ink-3: rgba(255, 255, 255, 0.68);
+      --ink-4: rgba(255, 255, 255, 0.5);
+      --glass: rgba(18, 20, 28, 0.28);
+      --glass-2: rgba(18, 20, 28, 0.4);
+      --line: rgba(255, 255, 255, 0.16);
+      --line-soft: rgba(255, 255, 255, 0.1);
+      --max: 1120px;
+      --nav-h: 52px;
+      --ease: cubic-bezier(0.22, 1, 0.36, 1);
+      --font: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text",
+        "Helvetica Neue", Helvetica, Arial, sans-serif;
+    }
 
-    <!-- update the version number as needed -->
-    <script defer src="/__/firebase/12.16.0/firebase-app-compat.js"></script>
-    <!-- include only the Firebase features as you need -->
-    <!-- <script defer src="/__/firebase/12.16.0/firebase-auth-compat.js"></script>
-    <script defer src="/__/firebase/12.16.0/firebase-database-compat.js"></script>
-    <script defer src="/__/firebase/12.16.0/firebase-firestore-compat.js"></script>
-    <script defer src="/__/firebase/12.16.0/firebase-functions-compat.js"></script>
-    <script defer src="/__/firebase/12.16.0/firebase-messaging-compat.js"></script>
-    <script defer src="/__/firebase/12.16.0/firebase-storage-compat.js"></script>
-    <script defer src="/__/firebase/12.16.0/firebase-analytics-compat.js"></script>
-    <script defer src="/__/firebase/12.16.0/firebase-remote-config-compat.js"></script>
-    <script defer src="/__/firebase/12.16.0/firebase-performance-compat.js"></script> -->
-    <!-- 
-      initialize the SDK after all desired features are loaded, set useEmulator to false
-      to avoid connecting the SDK to running emulators.
-    -->
-    <script defer src="/__/firebase/init.js?useEmulator=true"></script>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-    <style media="screen">
-      body { background: #ECEFF1; color: rgba(0,0,0,0.87); font-family: Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0; }
-      #message { background: white; max-width: 360px; margin: 100px auto 16px; padding: 32px 24px; border-radius: 3px; }
-      #message h2 { color: #ffa100; font-weight: bold; font-size: 16px; margin: 0 0 8px; }
-      #message h1 { font-size: 22px; font-weight: 300; color: rgba(0,0,0,0.6); margin: 0 0 16px;}
-      #message p { line-height: 140%; margin: 16px 0 24px; font-size: 14px; }
-      #message a { display: block; text-align: center; background: #039be5; text-transform: uppercase; text-decoration: none; color: white; padding: 16px; border-radius: 4px; }
-      #message, #message a { box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24); }
-      #load { color: rgba(0,0,0,0.4); text-align: center; font-size: 13px; }
-      @media (max-width: 600px) {
-        body, #message { margin-top: 0; background: white; box-shadow: none; }
-        body { border-top: 16px solid #ffa100; }
+    html {
+      scroll-behavior: smooth;
+      -webkit-text-size-adjust: 100%;
+    }
+
+    body {
+      font-family: var(--font);
+      color: var(--ink);
+      background: #4a7aab;
+      line-height: 1.47059;
+      font-weight: 400;
+      letter-spacing: -0.016em;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      overflow-x: hidden;
+    }
+
+    /* Blue→amber wallpaper, darkened for type contrast */
+    .bg {
+      position: fixed;
+      inset: 0;
+      z-index: -2;
+      background:
+        radial-gradient(120% 90% at 12% -10%, #8ab8de 0%, transparent 52%),
+        radial-gradient(90% 70% at 100% 8%, #9ec5e4 0%, transparent 48%),
+        radial-gradient(100% 80% at 78% 100%, #d48930 0%, transparent 54%),
+        radial-gradient(70% 55% at 8% 100%, #c97828 0%, transparent 48%),
+        linear-gradient(152deg, #5a96c8 0%, #6aa3d0 26%, #b08a52 58%, #c97d28 100%);
+    }
+
+    .bg::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(
+        180deg,
+        rgba(0, 0, 0, 0.12) 0%,
+        rgba(0, 0, 0, 0.08) 20%,
+        rgba(0, 0, 0, 0.1) 70%,
+        rgba(0, 0, 0, 0.18) 100%
+      );
+      pointer-events: none;
+    }
+
+    img {
+      display: block;
+      max-width: 100%;
+      height: auto;
+    }
+
+    a { color: inherit; text-decoration: none; }
+
+    .shell {
+      width: min(var(--max), calc(100% - 48px));
+      margin-inline: auto;
+    }
+
+    @media (max-width: 640px) {
+      .shell { width: min(var(--max), calc(100% - 32px)); }
+    }
+
+    /* Nav */
+    .nav {
+      position: fixed;
+      inset: 0 0 auto;
+      z-index: 100;
+      height: var(--nav-h);
+      transition: background 0.35s var(--ease), border-color 0.35s var(--ease),
+        box-shadow 0.35s var(--ease), backdrop-filter 0.35s var(--ease);
+      border-bottom: 0.5px solid transparent;
+    }
+
+    .nav.scrolled {
+      background: rgba(20, 28, 40, 0.38);
+      backdrop-filter: saturate(180%) blur(28px);
+      -webkit-backdrop-filter: saturate(180%) blur(28px);
+      border-bottom-color: var(--line-soft);
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.08);
+    }
+
+    .nav-inner {
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .logo {
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
+      font-size: 17px;
+      font-weight: 600;
+      letter-spacing: -0.022em;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+    }
+
+    .logo-mark {
+      width: 26px;
+      height: 26px;
+      border-radius: 6px;
+      display: grid;
+      place-items: center;
+      background: rgba(255, 255, 255, 0.18);
+      border: 0.5px solid rgba(255, 255, 255, 0.28);
+      box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.25);
+    }
+
+    .logo-mark svg { width: 14px; height: 14px; }
+
+    .nav-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .nav-link {
+      display: none;
+      align-items: center;
+      min-height: 32px;
+      padding: 0 12px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--ink-2);
+      border-radius: 8px;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+      transition: background 0.15s ease, color 0.15s ease;
+    }
+
+    @media (min-width: 760px) {
+      .nav-link { display: inline-flex; }
+    }
+
+    .nav-link:hover {
+      color: var(--ink);
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: none;
+      cursor: pointer;
+      font-family: inherit;
+      font-weight: 510;
+      letter-spacing: -0.014em;
+      transition: transform 0.15s cubic-bezier(0.2, 0, 0, 1),
+        opacity 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+      user-select: none;
+    }
+
+    .btn:active { transform: scale(0.96); }
+
+    .btn-nav {
+      min-height: 30px;
+      padding: 0 13px;
+      margin-left: 4px;
+      border-radius: 980px;
+      font-size: 13px;
+      color: var(--ink);
+      background: rgba(18, 20, 28, 0.36);
+      border: 0.5px solid rgba(255, 255, 255, 0.18);
+      box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.12);
+    }
+
+    .btn-nav:hover { background: rgba(18, 20, 28, 0.48); }
+
+    .btn-white {
+      min-height: 48px;
+      padding: 0 26px;
+      border-radius: 980px;
+      font-size: 16px;
+      color: #111318;
+      background: var(--white);
+      box-shadow:
+        0 1px 0 rgba(255, 255, 255, 1) inset,
+        0 8px 28px rgba(0, 0, 0, 0.14);
+    }
+
+    .btn-white:hover {
+      opacity: 0.96;
+      box-shadow:
+        0 1px 0 rgba(255, 255, 255, 1) inset,
+        0 10px 32px rgba(0, 0, 0, 0.16);
+    }
+
+    .btn-glass {
+      min-height: 48px;
+      padding: 0 24px;
+      border-radius: 980px;
+      font-size: 16px;
+      color: var(--ink);
+      background: rgba(18, 20, 28, 0.32);
+      border: 0.5px solid rgba(255, 255, 255, 0.22);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.16);
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+    }
+
+    .btn-glass:hover { background: rgba(18, 20, 28, 0.44); }
+
+    /* Hero */
+    .hero {
+      padding: calc(var(--nav-h) + 72px) 0 0;
+      text-align: center;
+    }
+
+    @media (max-width: 640px) {
+      .hero { padding-top: calc(var(--nav-h) + 48px); }
+    }
+
+    .hero h1 {
+      font-size: clamp(44px, 7.2vw, 72px);
+      font-weight: 650;
+      line-height: 1.05;
+      letter-spacing: -0.032em;
+      text-wrap: balance;
+      text-shadow:
+        0 1px 1px rgba(0, 0, 0, 0.12),
+        0 6px 32px rgba(0, 0, 0, 0.14);
+    }
+
+    .hero-lead {
+      margin: 18px auto 0;
+      max-width: 30rem;
+      font-size: clamp(18px, 2.1vw, 21px);
+      line-height: 1.38;
+      letter-spacing: -0.018em;
+      color: var(--ink-2);
+      text-wrap: pretty;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.16), 0 4px 20px rgba(0, 0, 0, 0.1);
+    }
+
+    .hero-cta {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 12px;
+      margin-top: 32px;
+    }
+
+    .hero-meta {
+      margin-top: 16px;
+      font-size: 13px;
+      color: var(--ink-3);
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.14);
+    }
+
+    /* Product shot */
+    .product {
+      position: relative;
+      margin: 56px auto 0;
+      max-width: 420px;
+      padding: 0 4px 8px;
+    }
+
+    @media (min-width: 720px) {
+      .product { margin-top: 64px; max-width: 440px; }
+    }
+
+    .product-glow {
+      position: absolute;
+      inset: 8% -12% -6%;
+      background: radial-gradient(ellipse at 50% 30%, rgba(255, 255, 255, 0.28), transparent 62%);
+      filter: blur(8px);
+      z-index: -1;
+      pointer-events: none;
+    }
+
+    .product-frame {
+      position: relative;
+      border-radius: 22px;
+      overflow: hidden;
+      background: rgba(18, 20, 28, 0.18);
+      border: 0.5px solid rgba(255, 255, 255, 0.28);
+      box-shadow:
+        0 0 0 0.5px rgba(0, 0, 0, 0.06),
+        0 1px 0 rgba(255, 255, 255, 0.2) inset,
+        0 30px 80px rgba(0, 0, 0, 0.22),
+        0 8px 24px rgba(0, 0, 0, 0.1);
+    }
+
+    .product-frame img {
+      width: 100%;
+      height: auto;
+      vertical-align: middle;
+      outline: 1px solid rgba(255, 255, 255, 0.08);
+      outline-offset: -1px;
+    }
+
+    .product-caption {
+      margin: 22px auto 0;
+      max-width: 22rem;
+      font-size: 14px;
+      line-height: 1.4;
+      color: var(--ink-3);
+      text-align: center;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.14);
+    }
+
+    /* Content band */
+    .band {
+      padding: 112px 0 0;
+    }
+
+    @media (max-width: 640px) {
+      .band { padding-top: 80px; }
+    }
+
+    .band-head {
+      max-width: 38rem;
+      margin-bottom: 40px;
+    }
+
+    .band-head.center {
+      margin-inline: auto;
+      text-align: center;
+    }
+
+    .kicker {
+      display: block;
+      margin-bottom: 12px;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--ink-3);
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.14);
+    }
+
+    .band h2 {
+      font-size: clamp(30px, 4.4vw, 44px);
+      font-weight: 650;
+      line-height: 1.1;
+      letter-spacing: -0.028em;
+      text-wrap: balance;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.14), 0 6px 24px rgba(0, 0, 0, 0.1);
+    }
+
+    .band-head p {
+      margin-top: 14px;
+      font-size: 18px;
+      line-height: 1.45;
+      letter-spacing: -0.014em;
+      color: var(--ink-2);
+      text-wrap: pretty;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.14);
+    }
+
+    .band-head.center p {
+      margin-inline: auto;
+      max-width: 32rem;
+    }
+
+    .rows {
+      display: grid;
+      gap: 1px;
+      background: var(--line-soft);
+      border-radius: 20px;
+      overflow: hidden;
+      border: 0.5px solid var(--line);
+      box-shadow:
+        0 1px 0 rgba(255, 255, 255, 0.12) inset,
+        0 20px 50px rgba(0, 0, 0, 0.08);
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: minmax(140px, 200px) 1fr;
+      gap: 20px 32px;
+      padding: 28px 32px;
+      background: rgba(18, 20, 28, 0.3);
+      backdrop-filter: blur(36px) saturate(160%);
+      -webkit-backdrop-filter: blur(36px) saturate(160%);
+    }
+
+    @media (max-width: 640px) {
+      .row {
+        grid-template-columns: 1fr;
+        gap: 6px;
+        padding: 22px 20px;
       }
-    </style>
-  </head>
-  <body>
-    <div id="message">
-      <h2>Welcome</h2>
-      <h1>Firebase Hosting Setup Complete</h1>
-      <p>You're seeing this because you've successfully setup Firebase Hosting. Now it's time to go build something extraordinary!</p>
-      <a target="_blank" href="https://firebase.google.com/docs/hosting/">Open Hosting Documentation</a>
+    }
+
+    .row h3 {
+      font-size: 17px;
+      font-weight: 600;
+      letter-spacing: -0.018em;
+      line-height: 1.3;
+      color: var(--ink);
+      text-shadow: 0 1px 1px rgba(0, 0, 0, 0.12);
+    }
+
+    .row p {
+      font-size: 16px;
+      line-height: 1.45;
+      letter-spacing: -0.012em;
+      color: var(--ink-2);
+      text-wrap: pretty;
+      max-width: 40rem;
+    }
+
+    .pillars {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+    }
+
+    @media (max-width: 800px) {
+      .pillars { grid-template-columns: 1fr; }
+    }
+
+    .pillar {
+      padding: 28px 26px 30px;
+      border-radius: 18px;
+      background: rgba(18, 20, 28, 0.3);
+      backdrop-filter: blur(36px) saturate(160%);
+      -webkit-backdrop-filter: blur(36px) saturate(160%);
+      border: 0.5px solid var(--line);
+      box-shadow:
+        0 1px 0 rgba(255, 255, 255, 0.14) inset,
+        0 12px 36px rgba(0, 0, 0, 0.08);
+      min-height: 100%;
+    }
+
+    .pillar-n {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      margin-bottom: 18px;
+      border-radius: 50%;
+      font-size: 13px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      color: #15171c;
+      background: var(--white);
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+    }
+
+    .pillar h3 {
+      font-size: 19px;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      line-height: 1.25;
+      margin-bottom: 10px;
+      text-shadow: 0 1px 1px rgba(0, 0, 0, 0.12);
+    }
+
+    .pillar p {
+      font-size: 15px;
+      line-height: 1.48;
+      letter-spacing: -0.01em;
+      color: var(--ink-2);
+      text-wrap: pretty;
+    }
+
+    .privacy {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 48px;
+      align-items: center;
+      padding: 36px 40px;
+      border-radius: 24px;
+      background: rgba(18, 20, 28, 0.34);
+      backdrop-filter: blur(40px) saturate(170%);
+      -webkit-backdrop-filter: blur(40px) saturate(170%);
+      border: 0.5px solid var(--line);
+      box-shadow:
+        0 1px 0 rgba(255, 255, 255, 0.14) inset,
+        0 24px 60px rgba(0, 0, 0, 0.1);
+    }
+
+    @media (max-width: 800px) {
+      .privacy {
+        grid-template-columns: 1fr;
+        gap: 28px;
+        padding: 28px 22px;
+      }
+    }
+
+    .privacy h2 {
+      font-size: clamp(28px, 3.8vw, 40px);
+      font-weight: 650;
+      letter-spacing: -0.028em;
+      line-height: 1.1;
+      text-wrap: balance;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.14);
+    }
+
+    .privacy .intro {
+      margin-top: 14px;
+      font-size: 17px;
+      line-height: 1.45;
+      color: var(--ink-2);
+      text-wrap: pretty;
+      max-width: 28rem;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+    }
+
+    .checks {
+      list-style: none;
+      display: grid;
+      gap: 12px;
+    }
+
+    .checks li {
+      display: grid;
+      grid-template-columns: 22px 1fr;
+      gap: 12px;
+      align-items: start;
+      padding: 14px 16px;
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.06);
+      border: 0.5px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .checks .tick {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      background: rgba(255, 255, 255, 0.16);
+      color: var(--ink);
+      margin-top: 1px;
+    }
+
+    .checks strong {
+      display: block;
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: -0.014em;
+      margin-bottom: 3px;
+      color: var(--ink);
+    }
+
+    .checks span {
+      font-size: 14px;
+      line-height: 1.4;
+      color: var(--ink-2);
+    }
+
+    .finale {
+      padding: 112px 0 96px;
+      text-align: center;
+    }
+
+    @media (max-width: 640px) {
+      .finale { padding: 80px 0 72px; }
+    }
+
+    .finale-card {
+      padding: 64px 40px;
+      border-radius: 28px;
+      background: rgba(18, 20, 28, 0.34);
+      backdrop-filter: blur(40px) saturate(170%);
+      -webkit-backdrop-filter: blur(40px) saturate(170%);
+      border: 0.5px solid var(--line);
+      box-shadow:
+        0 1px 0 rgba(255, 255, 255, 0.14) inset,
+        0 28px 70px rgba(0, 0, 0, 0.12);
+    }
+
+    @media (max-width: 640px) {
+      .finale-card { padding: 48px 24px; border-radius: 22px; }
+    }
+
+    .finale h2 {
+      font-size: clamp(32px, 5vw, 48px);
+      font-weight: 650;
+      letter-spacing: -0.03em;
+      line-height: 1.08;
+      text-wrap: balance;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.14);
+    }
+
+    .finale p {
+      margin: 14px auto 0;
+      max-width: 26rem;
+      font-size: 18px;
+      line-height: 1.4;
+      color: var(--ink-2);
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+    }
+
+    .finale .btn-white {
+      margin-top: 28px;
+    }
+
+    .finale .note {
+      margin-top: 16px;
+      font-size: 13px;
+      color: var(--ink-3);
+    }
+
+    footer {
+      padding: 0 0 40px;
+    }
+
+    .foot {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px 24px;
+      padding-top: 24px;
+      border-top: 0.5px solid rgba(255, 255, 255, 0.14);
+      font-size: 13px;
+      color: var(--ink-3);
+      text-shadow: 0 1px 1px rgba(0, 0, 0, 0.12);
+    }
+
+    .foot-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
+
+    .foot-links a {
+      display: inline-flex;
+      align-items: center;
+      min-height: 36px;
+      padding: 0 10px;
+      border-radius: 8px;
+      color: var(--ink-3);
+      transition: color 0.15s ease, background 0.15s ease;
+    }
+
+    .foot-links a:hover {
+      color: var(--ink);
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    @media (prefers-reduced-motion: no-preference) {
+      .rise {
+        opacity: 0;
+        transform: translateY(16px);
+        transition: opacity 0.75s var(--ease), transform 0.75s var(--ease);
+      }
+      .rise.in {
+        opacity: 1;
+        transform: none;
+      }
+      .rise.d1 { transition-delay: 0.06s; }
+      .rise.d2 { transition-delay: 0.12s; }
+      .rise.d3 { transition-delay: 0.18s; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .btn:active { transform: none; }
+      .nav { transition: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="bg" aria-hidden="true"></div>
+
+  <header class="nav" id="nav">
+    <div class="shell nav-inner">
+      <a class="logo" href="/">
+        <span class="logo-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 13a8 8 0 1 1 5 7" />
+            <path d="M9 16l-2 4 4-1" />
+          </svg>
+        </span>
+        Trace
+      </a>
+      <div class="nav-actions">
+        <a class="nav-link" href="#how">How it works</a>
+        <a class="nav-link" href="#privacy">Privacy</a>
+        <a class="btn btn-nav" href="https://github.com/amitshinde/Trace/releases">Download</a>
+      </div>
     </div>
-    <p id="load">Firebase SDK Loading&hellip;</p>
+  </header>
 
-    <script type="module">
-      // Import the functions you need from the SDKs you need
-      import { initializeApp } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-app.js";
-      // TODO: Add SDKs for Firebase products that you want to use
-      // https://firebase.google.com/docs/web/setup#available-libraries
-    
-      // Your web app's Firebase configuration
-      const firebaseConfig = {
-        apiKey: "AIzaSyBKmQpljnR69CGklDIQij7grBs_LFzRKWU",
-        authDomain: "trace-10622.firebaseapp.com",
-        projectId: "trace-10622",
-        storageBucket: "trace-10622.firebasestorage.app",
-        messagingSenderId: "223098530212",
-        appId: "1:223098530212:web:ef6af8d9e5dd6b5a1f7931"
-      };
-    
-      // Initialize Firebase
-      const app = initializeApp(firebaseConfig);
-    </script>
+  <main>
+    <section class="hero shell">
+      <h1 class="rise">What was I doing?</h1>
+      <p class="hero-lead rise d1">
+        Trace remembers, so you don’t have to.<br />
+        A private timeline of your work on Mac - ready to reopen.
+      </p>
+      <div class="hero-cta rise d2">
+        <a class="btn btn-white" href="https://github.com/amitshinde/Trace/releases">Download for Mac</a>
+        <a class="btn btn-glass" href="#how">How it works</a>
+      </div>
+      <p class="hero-meta rise d2">macOS · Fully offline · Auto-deletes after 7 days</p>
 
-    <script>
-      document.addEventListener('DOMContentLoaded', function() {
-        const loadEl = document.querySelector('#load');
-        // // 🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥
-        // // The Firebase SDK is initialized and available here!
-        //
-        // firebase.auth().onAuthStateChanged(user => { });
-        // firebase.database().ref('/path/to/ref').on('value', snapshot => { });
-        // firebase.firestore().doc('/foo/bar').get().then(() => { });
-        // firebase.functions().httpsCallable('yourFunction')().then(() => { });
-        // firebase.messaging().requestPermission().then(() => { });
-        // firebase.storage().ref('/path/to/ref').getDownloadURL().then(() => { });
-        // firebase.analytics(); // call to activate
-        // firebase.analytics().logEvent('tutorial_completed');
-        // firebase.performance(); // call to activate
-        //
-        // // 🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥
+      <div class="product rise d3">
+        <div class="product-glow" aria-hidden="true"></div>
+        <figure class="product-frame">
+          <img
+            src="/trace-panel.jpg"
+            width="609"
+            height="880"
+            alt="Trace menu bar panel showing today’s work sessions with summaries, app icons, and durations"
+            decoding="async"
+            fetchpriority="high"
+          />
+        </figure>
+        <p class="product-caption">Your day as sessions, not a raw app switcher log.</p>
+      </div>
+    </section>
 
-        try {
-          let app = firebase.app();
-          let features = [
-            'auth', 
-            'database', 
-            'firestore',
-            'functions',
-            'messaging', 
-            'storage', 
-            'analytics', 
-            'remoteConfig',
-            'performance',
-          ].filter(feature => typeof app[feature] === 'function');
-          loadEl.textContent = `Firebase SDK loaded with ${features.join(', ')}`;
-        } catch (e) {
-          console.error(e);
-          loadEl.textContent = 'Error loading the Firebase SDK, check the console.';
+    <section class="band shell" id="how">
+      <div class="band-head rise">
+        <span class="kicker">How it works</span>
+        <h2>You leave a thread. Trace keeps the stack.</h2>
+        <p>
+          Between meetings, messages, and browser tabs, the trail goes cold.
+          Trace groups the apps, windows, and files you used, then lets you open that stack again.
+        </p>
+      </div>
+
+      <div class="pillars">
+        <article class="pillar rise">
+          <span class="pillar-n" aria-hidden="true">1</span>
+          <h3>Watches the surface</h3>
+          <p>Foreground apps, window titles, and document URLs via Accessibility. No screenshots. No keystrokes.</p>
+        </article>
+        <article class="pillar rise d1">
+          <span class="pillar-n" aria-hidden="true">2</span>
+          <h3>Builds sessions</h3>
+          <p>Related work becomes cards with duration and a short sentence you can scan at a glance.</p>
+        </article>
+        <article class="pillar rise d2">
+          <span class="pillar-n" aria-hidden="true">3</span>
+          <h3>Restores the stack</h3>
+          <p>One click reopens the apps, files, and links from any session when you’re ready to continue.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="band shell">
+      <div class="band-head rise">
+        <span class="kicker">Built for focus</span>
+        <h2>Context without surveillance.</h2>
+      </div>
+      <div class="rows rise">
+        <div class="row">
+          <h3>Remembers context</h3>
+          <p>Apps, windows, documents, and tabs: enough to reconstruct the work, never the content itself.</p>
+        </div>
+        <div class="row">
+          <h3>Takes you back</h3>
+          <p>Restore a session’s apps, files, and browser links. Resume instead of reconstructing from memory.</p>
+        </div>
+        <div class="row">
+          <h3>Writes the line</h3>
+          <p>On-device summaries answer “what was I doing?” in a short sentence, not a dashboard you manage.</p>
+        </div>
+        <div class="row">
+          <h3>Stays out of the way</h3>
+          <p>Menu bar only. No dock icon fighting for attention. Check in when context slips.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="band shell" id="privacy">
+      <div class="privacy rise">
+        <div>
+          <span class="kicker">Privacy</span>
+          <h2>Private by design. Fully offline.</h2>
+          <p class="intro">
+            Built for people who need context without surveillance.
+            Your history stays on this Mac, and fades on its own.
+          </p>
+        </div>
+        <ul class="checks">
+          <li>
+            <span class="tick" aria-hidden="true">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M5 12l5 5L20 7"/></svg>
+            </span>
+            <div>
+              <strong>No screenshots or keystrokes</strong>
+              <span>Titles and paths only, never what you typed or read.</span>
+            </div>
+          </li>
+          <li>
+            <span class="tick" aria-hidden="true">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M5 12l5 5L20 7"/></svg>
+            </span>
+            <div>
+              <strong>Local SQLite storage</strong>
+              <span>Nothing is uploaded. No account required.</span>
+            </div>
+          </li>
+          <li>
+            <span class="tick" aria-hidden="true">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M5 12l5 5L20 7"/></svg>
+            </span>
+            <div>
+              <strong>Auto-deletes after 7 days</strong>
+              <span>Short memory by default. Less residue, less worry.</span>
+            </div>
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="finale shell" id="download">
+      <div class="finale-card rise">
+        <h2>Find your place again.</h2>
+        <p>Trace lives in the menu bar. Private, offline, and ready when context slips.</p>
+        <a class="btn btn-white" href="https://github.com/amitshinde/Trace/releases">Download for Mac</a>
+        <p class="note">Requires macOS · Accessibility optional for window titles</p>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="shell foot">
+      <div>Trace</div>
+      <div class="foot-links">
+        <a href="https://github.com/amitshinde/Trace">GitHub</a>
+        <a href="https://github.com/amitshinde/Trace/releases">Releases</a>
+        <a href="#privacy">Privacy</a>
+      </div>
+      <div>© <span id="y"></span></div>
+    </div>
+  </footer>
+
+  <script>
+    document.getElementById("y").textContent = new Date().getFullYear();
+
+    const nav = document.getElementById("nav");
+    const onScroll = () => nav.classList.toggle("scrolled", window.scrollY > 12);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          if (e.isIntersecting) {
+            e.target.classList.add("in");
+            io.unobserve(e.target);
+          }
         }
-      });
-    </script>
-  </body>
+      },
+      { threshold: 0.12, rootMargin: "0px 0px -8% 0px" }
+    );
+    document.querySelectorAll(".rise").forEach((el) => io.observe(el));
+  </script>
+</body>
 </html>
