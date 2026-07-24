@@ -5,7 +5,9 @@ enum SessionBuilder {
     private static let hardBreakSeconds: TimeInterval = 30 * 60
     private static let unrelatedSnapshotThreshold = 4
     private static let substantialDetourSeconds: TimeInterval = 8 * 60
-    private static let microSessionSeconds = 120
+    private static let microSessionSeconds = 180
+    /// Adjacent groups within this gap coalesce unless strong projects conflict.
+    private static let coalesceGapSeconds: TimeInterval = 12 * 60
 
     private static let assistantBundles: Set<String> = [
         "com.anthropic.claude",
@@ -15,9 +17,10 @@ enum SessionBuilder {
 
     private static let workBundles: Set<String> = [
         xcodeBundle,
-        "com.todesktop.230313mzl4w4u92",
+        "com.todesktop.230313mzl4w4u92", // Cursor
         "com.microsoft.VSCode",
         "com.apple.TextEdit",
+        "com.exafunction.windsurf",
     ]
 
     private static let supportingBundles: Set<String> = [
@@ -91,7 +94,7 @@ enum SessionBuilder {
             }
             unrelatedPending = []
             related.append(snap)
-            if let project = extractProject(from: snap) {
+            if let project = extractProject(from: snap), isStrongProjectName(project) {
                 relatedProject = mergeProjects(relatedProject, project)
             }
         }
@@ -125,7 +128,7 @@ enum SessionBuilder {
 
         flushAtBoundary()
 
-        let merged = absorbMicroGroups(groups)
+        let merged = coalesceAdjacentMicros(absorbMicroGroups(groups))
         let sessions = Array(merged.map { makeSession(from: $0.snapshots, project: $0.project) }.reversed())
         Logger.sessions.info("Built \(sessions.count) sessions from \(active.count) snapshots")
         return sessions
@@ -193,13 +196,64 @@ enum SessionBuilder {
         _ micro: (snapshots: [Snapshot], project: String?),
         into target: (snapshots: [Snapshot], project: String?)
     ) -> Bool {
-        if let microProject = micro.project, let targetProject = target.project {
-            return normalizeProjectName(microProject) == normalizeProjectName(targetProject)
+        shouldCoalesce(micro, target)
+    }
+
+    /// Second pass: glue short work shards (IDE/terminal/agent) without merging real detours.
+    private static func coalesceAdjacentMicros(
+        _ groups: [(snapshots: [Snapshot], project: String?)]
+    ) -> [(snapshots: [Snapshot], project: String?)] {
+        guard groups.count > 1 else { return groups }
+
+        var result: [(snapshots: [Snapshot], project: String?)] = [groups[0]]
+        for group in groups.dropFirst() {
+            guard let last = result.last,
+                  let lastEnd = last.snapshots.last?.timestamp,
+                  let nextStart = group.snapshots.first?.timestamp
+            else {
+                result.append(group)
+                continue
+            }
+
+            let gap = nextStart.timeIntervalSince(lastEnd)
+            let eitherMicro = groupDuration(last.snapshots) < microSessionSeconds
+                || groupDuration(group.snapshots) < microSessionSeconds
+
+            if eitherMicro, gap <= coalesceGapSeconds, shouldCoalesce(last, group) {
+                let mergedProject = mergeProjects(last.project, group.project)
+                result[result.count - 1] = (last.snapshots + group.snapshots, mergedProject)
+            } else {
+                result.append(group)
+            }
         }
-        if micro.project == nil && target.project == nil { return true }
-        if micro.project != nil { return false }
-        guard let targetProject = target.project else { return true }
-        return micro.snapshots.contains { contentRelatesToProject($0, project: targetProject) }
+        return result
+    }
+
+    private static func shouldCoalesce(
+        _ a: (snapshots: [Snapshot], project: String?),
+        _ b: (snapshots: [Snapshot], project: String?)
+    ) -> Bool {
+        if projectsConflict(current: a.project, next: b.project) { return false }
+
+        if let ap = a.project, let bp = b.project,
+           normalizeProjectName(ap) == normalizeProjectName(bp) {
+            return true
+        }
+
+        let aBundles = Set(a.snapshots.map(\.appBundle))
+        let bBundles = Set(b.snapshots.map(\.appBundle))
+        if !aBundles.isDisjoint(with: bBundles) { return true }
+
+        // IDE + terminal + assistant are one work continuum; pure detour apps are not.
+        let aWork = a.snapshots.contains { isWorkContextApp($0.appBundle) }
+        let bWork = b.snapshots.contains { isWorkContextApp($0.appBundle) }
+        return aWork && bWork
+    }
+
+    private static func isWorkContextApp(_ bundleId: String) -> Bool {
+        isWorkApp(bundleId)
+            || assistantBundles.contains(bundleId)
+            || supportingBundles.contains(bundleId)
     }
 
     private static func groupDuration(_ snapshots: [Snapshot]) -> Int {
@@ -269,12 +323,30 @@ enum SessionBuilder {
 
     private static func projectsConflict(current: String?, next: String?) -> Bool {
         guard let next, let current else { return false }
+        // Ignore weak/false projects (shell names, agent status words).
+        guard isStrongProjectName(current), isStrongProjectName(next) else { return false }
         return normalizeProjectName(current) != normalizeProjectName(next)
     }
 
-    private static func mergeProjects(_ existing: String?, _ incoming: String) -> String {
-        guard let existing else { return incoming }
+    private static func mergeProjects(_ existing: String?, _ incoming: String?) -> String? {
+        guard let incoming, isStrongProjectName(incoming) else { return existing }
+        guard let existing, isStrongProjectName(existing) else { return incoming }
         return projectNamePriority(incoming) > projectNamePriority(existing) ? incoming : existing
+    }
+
+    private static func mergeProjects(_ existing: String?, _ incoming: String) -> String? {
+        mergeProjects(existing, Optional(incoming))
+    }
+
+    /// Strong projects come from real paths/repos, not shell or UI chrome words.
+    static func isStrongProjectName(_ name: String) -> Bool {
+        let normalized = normalizeProjectName(name)
+        let lower = normalized.lowercased()
+        if lower.isEmpty || isJunkProjectName(lower) { return false }
+        if weakProjectTokens.contains(lower) { return false }
+        // Multi-word agent/status titles are not projects.
+        if normalized.contains(" ") && !normalized.contains("/") { return false }
+        return true
     }
 
     private static func projectNamePriority(_ name: String) -> Int {
@@ -387,13 +459,25 @@ enum SessionBuilder {
 
     private static func isJunkProjectName(_ name: String) -> Bool {
         if name.count <= 2 { return true }
-        return junkNames.contains(name)
+        return junkNames.contains(name) || weakProjectTokens.contains(name)
     }
 
     private static let junkNames: Set<String> = [
         "pwd", "usr", "var", "etc", "opt", "run", "srv",
         "private", "volumes", "applications", "library",
         "system", "cores", "dev", "sbin",
+    ]
+
+    /// Shells, CLIs, and agent UI tokens that must never become session projects.
+    private static let weakProjectTokens: Set<String> = [
+        "zsh", "bash", "fish", "sh", "csh", "tcsh", "nu", "pwsh", "powershell",
+        "node", "python", "python3", "ruby", "perl", "lua", "php", "java",
+        "go", "rustc", "cargo", "npm", "pnpm", "yarn", "bun", "deno",
+        "git", "ssh", "tmux", "screen", "vim", "nvim", "emacs", "nano",
+        "grok", "claude", "codex", "cursor", "warp", "ollama",
+        "running", "thinking", "responding", "planning", "generating",
+        "contextcontin", "contextcontinuity",
+        "untitled", "new", "window", "terminal", "console",
     ]
 
     private static func projectFromXcodeTitle(_ title: String, documentURL: String?) -> String? {
@@ -420,14 +504,33 @@ enum SessionBuilder {
     }
 
     private static func projectFromTerminalTitle(_ title: String) -> String? {
-        for part in title.components(separatedBy: " — ") {
-            if let p = projectFromPath(part.trimmingCharacters(in: .whitespaces)) { return p }
+        // Only accept path-like titles (~/..., /Users/..., repo/path). Bare words
+        // like "zsh" or "Running: foo" are not projects.
+        let candidates: [String] = {
+            var parts = title.components(separatedBy: " — ")
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+            if let colonIdx = title.firstIndex(of: ":") {
+                parts.append(String(title[title.index(after: colonIdx)...])
+                    .trimmingCharacters(in: .whitespaces))
+            }
+            parts.append(title)
+            return parts
+        }()
+
+        for raw in candidates {
+            guard looksLikeFilesystemPath(raw) else { continue }
+            if let p = projectFromPath(raw), isStrongProjectName(p) { return p }
         }
-        if let colonIdx = title.firstIndex(of: ":") {
-            let after = String(title[title.index(after: colonIdx)...]).trimmingCharacters(in: .whitespaces)
-            if let p = projectFromPath(after) { return p }
-        }
-        return projectFromPath(title)
+        return nil
+    }
+
+    private static func looksLikeFilesystemPath(_ text: String) -> Bool {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if t.hasPrefix("~") || t.hasPrefix("/") { return true }
+        if t.contains("/Users/") || t.contains("/home/") { return true }
+        // cwd-style: "folder/subfolder" or "repo — ~/Developer/Trace"
+        if t.contains("/"), t.split(separator: "/").count >= 2 { return true }
+        return false
     }
 
     // MARK: - Build session

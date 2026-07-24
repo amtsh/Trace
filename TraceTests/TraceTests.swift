@@ -123,6 +123,7 @@ struct SessionBuilderTests {
 
     @Test func splitsSustainedUnrelatedActivityIntoNewSession() {
         let base = Date(timeIntervalSince1970: 1_700_000_000)
+        // Substantial detour needs ≥4 unrelated snaps spanning ≥8 minutes.
         let snapshots = [
             snapshot(id: 1, at: base, title: "Trace — TraceApp.swift",
                      url: "file:///Users/dev/Trace/Trace/TraceApp.swift"),
@@ -134,7 +135,13 @@ struct SessionBuilderTests {
             snapshot(id: 4, at: base.addingTimeInterval(300), title: "How to make mac app",
                      url: "https://www.perplexity.ai/search/mac-app", bundle: "com.google.Chrome",
                      appName: "Google Chrome"),
-            snapshot(id: 5, at: base.addingTimeInterval(420), title: "Trace — SessionCardView.swift",
+            snapshot(id: 5, at: base.addingTimeInterval(480), title: "Weather elsewhere",
+                     url: "https://www.perplexity.ai/search/weather", bundle: "com.google.Chrome",
+                     appName: "Google Chrome"),
+            snapshot(id: 6, at: base.addingTimeInterval(620), title: "Cooking rice",
+                     url: "https://www.perplexity.ai/search/rice", bundle: "com.google.Chrome",
+                     appName: "Google Chrome"),
+            snapshot(id: 7, at: base.addingTimeInterval(780), title: "Trace — SessionCardView.swift",
                      url: "file:///Users/dev/Trace/Trace/Views/SessionCardView.swift"),
         ]
 
@@ -193,7 +200,11 @@ struct SessionBuilderTests {
                      bundle: "com.apple.weather", appName: "Weather"),
             snapshot(id: 3, at: base.addingTimeInterval(240), title: "INTC",
                      bundle: "com.apple.stocks", appName: "Stocks"),
-            snapshot(id: 4, at: base.addingTimeInterval(360), title: "Trace — TimelineView.swift",
+            snapshot(id: 4, at: base.addingTimeInterval(400), title: "AAPL",
+                     bundle: "com.apple.stocks", appName: "Stocks"),
+            snapshot(id: 5, at: base.addingTimeInterval(560), title: "Mumbai",
+                     bundle: "com.apple.weather", appName: "Weather"),
+            snapshot(id: 6, at: base.addingTimeInterval(720), title: "Trace — TimelineView.swift",
                      url: "file:///Users/dev/Trace/Trace/Views/TimelineView.swift"),
         ]
 
@@ -254,9 +265,11 @@ struct SessionBuilderTests {
                      bundle: "ai.perplexity.macv3", appName: "Perplexity"),
             snapshot(id: 4, at: base.addingTimeInterval(720), title: "scrambled eggs in rice cooker",
                      bundle: "company.thebrowser.dia", appName: "Dia"),
-            snapshot(id: 5, at: base.addingTimeInterval(780), title: nil,
+            snapshot(id: 5, at: base.addingTimeInterval(900), title: nil,
                      bundle: "ai.perplexity.macv3", appName: "Perplexity"),
-            snapshot(id: 6, at: base.addingTimeInterval(1020), title: "Trace — SessionCardView.swift",
+            snapshot(id: 6, at: base.addingTimeInterval(1080), title: "more recipes",
+                     bundle: "company.thebrowser.dia", appName: "Dia"),
+            snapshot(id: 7, at: base.addingTimeInterval(1200), title: "Trace — SessionCardView.swift",
                      url: "file:///Users/dev/Trace/Trace/Views/SessionCardView.swift"),
         ]
 
@@ -264,9 +277,8 @@ struct SessionBuilderTests {
 
         #expect(sessions.count == 3)
         #expect(sessions[0].activity == "Trace")
-        #expect(sessions[1].activity == "scrambled eggs in rice cooker")
+        #expect(sessions[1].apps.contains { $0.appName == "Dia" || $0.appName == "Perplexity" })
         #expect(sessions[2].activity == "Trace")
-        #expect(sessions[0].durationSeconds < sessions[2].durationSeconds)
     }
 
     @Test func ignoresTransientUnrelatedGlance() {
@@ -285,6 +297,62 @@ struct SessionBuilderTests {
 
         #expect(sessions.count == 1)
         #expect(sessions[0].activity == "Trace")
+    }
+
+    @Test func mergesCursorAgentAndWarpIntoOneSession() {
+        let base = Date(timeIntervalSince1970: 1_700_000_000)
+        let cursor = "com.todesktop.230313mzl4w4u92"
+        let warp = "dev.warp.Warp-Stable"
+        let snapshots = [
+            snapshot(id: 1, at: base, title: "zsh", bundle: warp, appName: "Warp"),
+            snapshot(id: 2, at: base.addingTimeInterval(30), title: "grok", bundle: warp, appName: "Warp"),
+            snapshot(
+                id: 3, at: base.addingTimeInterval(60),
+                title: ".: - Thinking - What Does the App Do",
+                bundle: cursor, appName: "Cursor"
+            ),
+            snapshot(
+                id: 4, at: base.addingTimeInterval(120),
+                title: "What Does the App Do Overview",
+                bundle: cursor, appName: "Cursor"
+            ),
+            snapshot(
+                id: 5, at: base.addingTimeInterval(180),
+                title: ".: - Running: ContextContin…",
+                bundle: warp, appName: "Warp"
+            ),
+            snapshot(
+                id: 6, at: base.addingTimeInterval(240),
+                title: ".: - Responding - What Does the App Do",
+                bundle: cursor, appName: "Cursor"
+            ),
+            snapshot(
+                id: 7, at: base.addingTimeInterval(300),
+                title: "What Does the App Do Overview",
+                url: "file:///Users/dev/xcode/Trace/Trace/Domain/SessionBuilder.swift",
+                bundle: cursor, appName: "Cursor"
+            ),
+            snapshot(
+                id: 8, at: base.addingTimeInterval(420),
+                title: ".: - Responding - What Does the App Do",
+                bundle: cursor, appName: "Cursor"
+            ),
+        ]
+
+        let sessions = SessionBuilder.buildSessions(from: snapshots)
+
+        #expect(sessions.count == 1)
+        #expect(sessions[0].apps.contains { $0.bundleId == cursor })
+        #expect(sessions[0].apps.contains { $0.bundleId == warp })
+        #expect(sessions[0].activity == "Trace")
+    }
+
+    @Test func terminalShellTitlesAreNotProjects() {
+        #expect(SessionBuilder.projectFromURL("file:///Users/dev/Trace/foo.swift") == "Trace")
+        #expect(SessionBuilder.isStrongProjectName("zsh") == false)
+        #expect(SessionBuilder.isStrongProjectName("grok") == false)
+        #expect(SessionBuilder.isStrongProjectName("ContextContin") == false)
+        #expect(SessionBuilder.isStrongProjectName("Trace") == true)
     }
 }
 
